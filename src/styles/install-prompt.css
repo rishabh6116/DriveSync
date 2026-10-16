@@ -1,0 +1,117 @@
+.install-prompt {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 999999;
+    display: flex;
+    justify-content: center;
+    animation: installPromptSlideUp 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes installPromptSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.install-prompt-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    max-width: 380px;
+    padding: 14px;
+    border-radius: 16px;
+    background: var(--color-background-primary, #1a202c);
+    border: 1px solid var(--color-border-secondary, #262c38);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.install-prompt-icon {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--color-background-secondary, #141822);
+}
+
+.install-prompt-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.install-prompt-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.install-prompt-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-text-primary, #e8ebf1);
+}
+
+.install-prompt-sub {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--color-text-secondary, #94a0b4);
+}
+
+.install-prompt-sub .ti {
+    font-size: 13px;
+    vertical-align: -1px;
+}
+
+.install-prompt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--color-accent, #3b82f6);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.install-prompt-btn:hover {
+    background: color-mix(in srgb, var(--color-accent, #3b82f6) 85%, #000 15%);
+}
+
+.install-prompt-btn .ti {
+    font-size: 14px;
+}
+
+.install-prompt-close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 2px;
+    color: var(--color-text-tertiary, #596274);
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s ease;
+}
+
+.install-prompt-close:hover {
+    color: var(--color-text-primary, #e8ebf1);
+}
+
+.install-prompt-close .ti {
+    font-size: 18px;
+}
+
+@media (min-width: 768px) {
+    .install-prompt {
+        display: none;
+    }
+}

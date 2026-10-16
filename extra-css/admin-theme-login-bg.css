@@ -1,0 +1,53 @@
+/* ===== Login-style background for Admin gate (.gate / .card) =====
+   Paste at the END of the Admin page's CSS file (admin.page.css).
+   Theme page: paste only the "auth-gate-overlay" block from index.page.css
+   at the end of theme.page.css (same class names, same markup). */
+
+.gate {
+    --login-dot: rgba(255, 255, 255, 0.10);
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(at 20% 20%, rgba(37, 99, 235, 0.22) 0, transparent 50%),
+        radial-gradient(at 80% 10%, rgba(99, 102, 241, 0.18) 0, transparent 50%),
+        radial-gradient(at 70% 90%, rgba(6, 182, 212, 0.14) 0, transparent 50%),
+        #0f1115;
+}
+
+[data-theme="light"] .gate {
+    --login-dot: #cbd5e1;
+    background:
+        radial-gradient(at 20% 20%, #dbeafe 0, transparent 50%),
+        radial-gradient(at 80% 10%, #e0e7ff 0, transparent 50%),
+        radial-gradient(at 70% 90%, #cffafe 0, transparent 50%),
+        #f8fafc;
+}
+
+.gate::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: radial-gradient(var(--login-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+    mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+}
+
+.gate .card {
+    position: relative;
+    z-index: 1;
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    background: rgba(30, 30, 30, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(37, 99, 235, 0.06);
+}
+
+[data-theme="light"] .gate .card {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 20px 60px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(16, 24, 40, 0.04);
+}

@@ -1,0 +1,13 @@
+{
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "regions": ["bom1"],
+  "rewrites": [
+    { "source": "/theme", "destination": "/index.html" },
+    { "source": "/adminaccount", "destination": "/index.html" },
+    { "source": "/setup", "destination": "/index.html" },
+    { "source": "/register", "destination": "/index.html" },
+    { "source": "/forgot-password", "destination": "/index.html" },
+    { "source": "/reset-password", "destination": "/index.html" }
+  ]
+}

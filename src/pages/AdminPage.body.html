@@ -1,0 +1,267 @@
+<style data-login-bg="admin">
+.gate {
+    --login-dot: rgba(255, 255, 255, 0.10);
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(at 20% 20%, rgba(37, 99, 235, 0.22) 0, transparent 50%),
+        radial-gradient(at 80% 10%, rgba(99, 102, 241, 0.18) 0, transparent 50%),
+        radial-gradient(at 70% 90%, rgba(6, 182, 212, 0.14) 0, transparent 50%),
+        #0f1115;
+}
+
+[data-theme="light"] .gate {
+    --login-dot: #cbd5e1;
+    background:
+        radial-gradient(at 20% 20%, #dbeafe 0, transparent 50%),
+        radial-gradient(at 80% 10%, #e0e7ff 0, transparent 50%),
+        radial-gradient(at 70% 90%, #cffafe 0, transparent 50%),
+        #f8fafc;
+}
+
+.gate::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: radial-gradient(var(--login-dot) 1px, transparent 1px);
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+    mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+}
+
+.gate .card {
+    position: relative;
+    z-index: 1;
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    background: rgba(30, 30, 30, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(37, 99, 235, 0.06);
+}
+
+[data-theme="light"] .gate .card {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 20px 60px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(16, 24, 40, 0.04);
+}
+
+/* Hide scrollbars everywhere (scrolling still works) */
+html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+*::-webkit-scrollbar, *::-webkit-scrollbar-thumb, *::-webkit-scrollbar-track { display: none !important; width: 0 !important; height: 0 !important; background: transparent !important; }
+</style>
+    <div class="gate" id="gate">
+        <div class="card">
+            <i class="ti ti-shield-lock"></i>
+            <h2>Admin Access</h2>
+            <p class="sub">Enter the admin passcode to manage DriveSync accounts.</p>
+            <input type="password" id="adminPasscode" placeholder="Admin passcode" autocomplete="off">
+            <div class="error-msg" id="gateError"></div>
+            <button class="btn" id="unlockBtn">Unlock</button>
+        </div>
+    </div>
+
+    <div class="layout" id="app">
+        <div class="sidebar" id="sidebarNode">
+            <div class="logo" onclick="window.location.href='/'" style="cursor:pointer;">
+                <div class="logo-icon"><img src="/android-chrome-192x192.png?v=3" alt="DriveSync"></div>
+                <div>
+                    <div class="logo-text">DriveSync</div>
+                    <div class="logo-sub">Admin Panel</div>
+                </div>
+            </div>
+
+            <div class="sidebar-menu-items">
+                <button class="nav-btn active" id="nav-add" onclick="switchView('add', this)">
+                    <i class="ti ti-square-plus"></i> Add Account
+                </button>
+                <button class="nav-btn" id="nav-manage" onclick="switchView('manage', this)">
+                    <i class="ti ti-users"></i> Existing Accounts
+                </button>
+                <button class="nav-btn" id="nav-password" onclick="switchView('password', this)">
+                    <i class="ti ti-key"></i> Change Password
+                </button>
+                <button class="nav-btn" id="nav-feature" onclick="switchView('feature', this)">
+                    <i class="ti ti-toggle-left"></i> Feature Access
+                </button>
+
+                <div class="nav-section">Navigation</div>
+                <a class="nav-btn" href="/" style="text-decoration:none; display:flex;">
+                    <i class="ti ti-arrow-left"></i> Back to App
+                </a>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="nav-btn btn-logout" id="logoutBtn"><i class="ti ti-logout"></i> Logout</button>
+            </div>
+        </div>
+
+        <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+        <div class="main">
+            <div class="topbar">
+                <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Toggle menu">
+                    <i class="ti ti-menu-2"></i>
+                </button>
+                <h1 id="topbarTitle">Add Account</h1>
+            </div>
+
+            <div class="content">
+                <div class="view active" id="view-add">
+                    <div class="panel">
+                        <h3>Add Account</h3>
+                        <label class="field-label">Label</label>
+                        <input type="text" id="fLabel" placeholder="e.g. Personal Drive, Team Drive #3">
+                        <label class="field-label">Email</label>
+                        <input type="email" id="fEmail" placeholder="Email this account will log in with" autocomplete="off">
+                        <label class="field-label">Password</label>
+                        <input type="text" id="fPassword" placeholder="Password" autocomplete="off">
+                        <label class="field-label">Apps Script Macro URL</label>
+                        <input type="text" id="fMacroUrl" placeholder="https://script.google.com/macros/s/.../exec">
+                        <label class="field-label">Drive Folder Link</label>
+                        <input type="text" id="fRootFolderId" placeholder="Paste Google Drive folder link" oninput="var v=this.value,m=v.match(/\/folders\/([\w-]+)/)||v.match(/[?&]id=([\w-]+)/);if(m&&m[1]!==v)this.value=m[1]">
+                        <button class="btn" id="addBtn">Add Account</button>
+                        <div class="toast" id="addToast"></div>
+                    </div>
+                </div>
+
+                <div class="view" id="view-manage">
+                    <div class="panel">
+                        <h3>Existing Accounts</h3>
+                        <div id="accountList"></div>
+                    </div>
+                </div>
+
+                <div class="view" id="view-password">
+                    <div class="panel">
+                        <h3>Change Admin Password</h3>
+                        <label class="field-label">Current Passcode</label>
+                        <input type="password" id="pCurrent" placeholder="Current admin passcode" autocomplete="off">
+                        <label class="field-label">New Passcode</label>
+                        <input type="password" id="pNew" placeholder="New admin passcode" autocomplete="off">
+                        <label class="field-label">Confirm New Passcode</label>
+                        <input type="password" id="pConfirm" placeholder="Re-enter new admin passcode" autocomplete="off">
+                        <button class="btn" id="changePasswordBtn">Update Password</button>
+                        <div class="toast" id="passwordToast"></div>
+                    </div>
+                </div>
+
+                <div class="view" id="view-feature">
+                    <div class="panel">
+                        <h3>Add Account — Self-Service Access</h3>
+                        <p class="field-label" style="margin-bottom:14px;">
+                            Controls whether the "Add Account" link shows up in the app sidebar (below Recent Activity),
+                            letting users register their own drive account without using this admin panel.
+                        </p>
+
+                        <label class="feature-radio-row">
+                            <input type="radio" name="addAccountMode" id="modeOff" value="off">
+                            <div>
+                                <div class="feature-radio-title">Off</div>
+                                <div class="feature-radio-sub">Hidden for everyone.</div>
+                            </div>
+                        </label>
+                        <label class="feature-radio-row">
+                            <input type="radio" name="addAccountMode" id="modeAll" value="all">
+                            <div>
+                                <div class="feature-radio-title">All users</div>
+                                <div class="feature-radio-sub">Visible to anyone logged into the app.</div>
+                            </div>
+                        </label>
+                        <label class="feature-radio-row">
+                            <input type="radio" name="addAccountMode" id="modeSpecific" value="specific">
+                            <div>
+                                <div class="feature-radio-title">Specific users</div>
+                                <div class="feature-radio-sub">Visible only to the accounts you select below.</div>
+                            </div>
+                        </label>
+
+                        <div id="specificUsersBox" style="display:none; margin-top:14px;">
+                            <label class="field-label">Accounts allowed to see "Add Account"</label>
+                            <div id="specificUsersList"></div>
+                        </div>
+
+                        <button class="btn" id="saveFeatureBtn" style="margin-top:18px;">Save Access Setting</button>
+                        <div class="toast" id="featureToast"></div>
+                    </div>
+
+                    <div class="panel" style="margin-top:20px;">
+                        <h3>Session Timeout — Auto-Logout</h3>
+                        <p class="field-label" style="margin-bottom:14px;">
+                            Controls how long a user can stay idle before the app automatically logs them out.
+                            Applies to every account, on both the main app and the /theme view.
+                        </p>
+
+                        <label class="feature-radio-row">
+                            <input type="radio" name="sessionMode" id="sessionModeTimeout" value="timeout">
+                            <div>
+                                <div class="feature-radio-title">Auto-logout after inactivity</div>
+                                <div class="feature-radio-sub">Logs the user out after the number of minutes below with no activity.</div>
+                            </div>
+                        </label>
+                        <label class="feature-radio-row">
+                            <input type="radio" name="sessionMode" id="sessionModeNever" value="never">
+                            <div>
+                                <div class="feature-radio-title">Never (until manual logout)</div>
+                                <div class="feature-radio-sub">Session stays open indefinitely until the user manually logs out.</div>
+                            </div>
+                        </label>
+
+                        <div id="sessionTimeoutBox" style="margin-top:14px;">
+                            <label class="field-label">Auto-logout after (minutes)</label>
+                            <input type="number" id="sessionTimeoutMinutes" min="1" step="1" placeholder="e.g. 2">
+                        </div>
+
+                        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--color-border-secondary,rgba(255,255,255,0.08));">
+                            <label class="feature-radio-row" style="align-items:flex-start;">
+                                <input type="checkbox" id="persistAcrossTabCloseToggle">
+                                <div>
+                                    <div class="feature-radio-title">Stay logged in after closing the tab</div>
+                                    <div class="feature-radio-sub">
+                                        Normally, closing the tab (or pressing Ctrl+Shift+T to reopen it) always
+                                        requires the passcode again — this is independent of the auto-logout
+                                        setting above. Turn this on to keep users signed in across tab closes and
+                                        browser restarts, until they tap "Terminate Session" manually. The
+                                        auto-logout setting above still applies normally while a tab is open.
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+
+                        <button class="btn" id="saveSessionBtn" style="margin-top:18px;">Save Session Setting</button>
+                        <div class="toast" id="sessionToast"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="editModalBackdrop">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Edit Account</h3>
+                <button class="modal-close" id="editModalClose" aria-label="Close">&times;</button>
+            </div>
+
+            <label class="field-label">Label</label>
+            <input type="text" id="eLabel" placeholder="e.g. Personal Drive, Team Drive #3">
+            <label class="field-label">Email</label>
+            <input type="email" id="eEmail" placeholder="Email this account will log in with" autocomplete="off">
+            <label class="field-label">Password</label>
+            <input type="text" id="ePassword" placeholder="Leave blank to keep the current password" autocomplete="off">
+            <label class="field-label">Apps Script Macro URL</label>
+            <input type="text" id="eMacroUrl" placeholder="https://script.google.com/macros/s/.../exec">
+            <label class="field-label">Drive Folder Link</label>
+            <input type="text" id="eRootFolderId" placeholder="Paste Google Drive folder link" oninput="var v=this.value,m=v.match(/\/folders\/([\w-]+)/)||v.match(/[?&]id=([\w-]+)/);if(m&&m[1]!==v)this.value=m[1]">
+
+            <div class="modal-actions">
+                <button class="btn ghost" id="editCancelBtn">Cancel</button>
+                <button class="btn" id="editSaveBtn">Save Changes</button>
+            </div>
+            <div class="toast" id="editToast"></div>
+        </div>
+    </div>
+
