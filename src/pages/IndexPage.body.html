@@ -34,10 +34,9 @@
     <div class="layout" id="app">
         <div class="sidebar" id="sidebarNode">
             <div class="logo" onclick="goToHomeView()" style="cursor:pointer;">
-                <div class="logo-icon"><img src="/android-chrome-192x192.png?v=3" alt="DriveSync"></div>
-                <div>
-                    <div class="logo-text">DriveSync</div>
-                    <div class="logo-sub">Cloud Environment</div>
+                <div class="logo-icon" id="sidebarAvatar"><img src="/android-chrome-192x192.png?v=3" alt="DriveSync"></div>
+                <div class="logo-meta">
+                    <div class="logo-text" id="sidebarGreeting">DriveSync</div>
                 </div>
             </div>
 
@@ -78,8 +77,8 @@
             </div>
 
             <div class="sidebar-footer">
-                <button class="nav-btn" onclick="openChangePasswordModal()"><i class="ti ti-key"></i> Change
-                    Password</button>
+                <button class="nav-btn" onclick="openEditProfileModal()"><i class="ti ti-user-edit"></i> Edit
+                    Profile</button>
                 <button class="nav-btn btn-logout" onclick="executeAppLogout()"><i class="ti ti-logout"></i> Terminate
                     Session</button>
             </div>
@@ -145,9 +144,9 @@
             </div>
 
             <div class="content" id="driveContent">
-                <h3 style="font-size:18px;font-weight:600;margin-bottom:0.5rem;" id="viewTitle">DriveSync Storage</h3>
+                <h3 style="font-size:18px;font-weight:600;margin-bottom:2px;line-height:1.3;" id="viewTitle">DriveSync Storage</h3>
 
-                <div class="breadcrumbs" id="breadcrumbs" style="margin-bottom:12px;">
+                <div class="breadcrumbs" id="breadcrumbs" style="margin-bottom:8px;">
                     <span class="breadcrumb-item" onclick="navigateToRoot()">Drive Root</span>
                 </div>
 
@@ -297,6 +296,68 @@
             <div class="modal-actions">
                 <button class="btn" onclick="closeRenameModal()">Cancel</button>
                 <button class="btn btn-primary" id="confirmRenameBtn" onclick="submitRenameItem()">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="editProfileModal">
+        <div class="modal-box ep-wide">
+            <aside class="ep-side">
+                <h3><i class="ti ti-user-edit"></i> Edit Profile</h3>
+                <label class="ep-avatar" id="epAvatarPreview" title="Change photo">
+                    <input type="file" id="epPhotoInput" accept="image/*" hidden onchange="handleProfilePhotoPick(event)">
+                </label>
+                <div class="ep-photo-text">
+                    <button type="button" class="ep-link" onclick="document.getElementById('epPhotoInput').click()" id="epUploadBtn">Upload photo</button>
+                    <button type="button" class="ep-link ep-link-danger" id="epRemoveBtn" onclick="removeProfilePhoto()">Remove photo</button>
+                </div>
+            </aside>
+
+            <div class="ep-main">
+                <div class="ep-grid">
+                    <div class="ep-field">
+                        <label class="ep-label" for="epName">Name</label>
+                        <input type="text" id="epName" class="modal-input" maxlength="80" placeholder="Your name" autocomplete="name"
+                            oninput="if(!epAvatar) renderProfilePhotoPreview()">
+                    </div>
+                    <div class="ep-field">
+                        <label class="ep-label" for="epEmail">Email</label>
+                        <input type="email" id="epEmail" class="modal-input" maxlength="254" placeholder="Email" autocomplete="off"
+                            autocapitalize="off" spellcheck="false">
+                    </div>
+                    <div class="ep-field">
+                        <label class="ep-label" for="epFolder">Google Drive folder</label>
+                        <input type="text" id="epFolder" class="modal-input" placeholder="Paste Google Drive folder link or ID" autocomplete="off"
+                            oninput="this.value = extractFolderId(this.value)">
+                    </div>
+                    <div class="ep-field">
+                        <label class="ep-label" for="epMacroUrl">Apps Script URL</label>
+                        <input type="text" id="epMacroUrl" class="modal-input" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"
+                            spellcheck="false">
+                    </div>
+                    <div class="ep-field">
+                        <label class="ep-label" for="epNewPassword">New password</label>
+                        <input type="password" id="epNewPassword" class="modal-input" placeholder="Leave empty to keep current"
+                            autocomplete="new-password">
+                    </div>
+                    <div class="ep-field">
+                        <label class="ep-label" for="epConfirmPassword">Confirm new password</label>
+                        <input type="password" id="epConfirmPassword" class="modal-input" placeholder="Re-enter new password"
+                            autocomplete="new-password">
+                    </div>
+                    <div class="ep-field ep-span">
+                        <label class="ep-label" for="epCurrentPassword">Current password <span class="ep-hint">(required to save any change)</span></label>
+                        <input type="password" id="epCurrentPassword" class="modal-input" placeholder="Current password"
+                            autocomplete="current-password">
+                    </div>
+                </div>
+
+                <div id="editProfileError"
+                    style="display:none;color:#ef4444;font-size:13px;line-height:1.4;"></div>
+                <div class="modal-actions">
+                    <button class="btn" onclick="closeEditProfileModal()">Cancel</button>
+                    <button class="btn btn-primary" id="submitEditProfileBtn" onclick="submitEditProfile()">Save</button>
+                </div>
             </div>
         </div>
     </div>

@@ -3,7 +3,7 @@
 // Public self-registration, used by the "Register" link on the sign-in screen.
 //
 //   GET  → { enabled }   whether the Register link should be shown
-//   POST → { label, email, password, macroUrl, rootFolderId }
+//   POST → { label, email, password, macroUrl, rootFolderId, avatar? }
 //          creates a new account in the MongoDB "accounts" collection
 //
 // Unlike /api/self-add-account this does not require a session, because the
@@ -15,6 +15,10 @@ import { DuplicateEmailError, emailUsedByStaticAccount, insertAccount } from '..
 import { hashPassword, normalizeEmail, validateEmail, validatePassword } from '../lib/passwords.js';
 
 const registrationEnabled = () => String(process.env.REGISTRATION_ENABLED || 'true').toLowerCase() !== 'false';
+
+// A 320x320 JPEG at ~85% quality is roughly 30-60 KB (about 80 KB as base64).
+const MAX_AVATAR_CHARS = 200 * 1024;
+const AVATAR_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/;
 
 // Best-effort spam guard (per warm serverless instance), same approach as api/auth.js.
 const WINDOW_MS = 60 * 60 * 1000;
@@ -45,7 +49,7 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Registration is currently closed.' });
     }
 
-    const { label, email, password, macroUrl, rootFolderId } = req.body || {};
+    const { label, email, password, macroUrl, rootFolderId, avatar } = req.body || {};
     const cleanEmail = normalizeEmail(email);
     const cleanLabel = String(label || '').trim();
     const cleanMacroUrl = String(macroUrl || '').trim();
@@ -60,6 +64,13 @@ export default async function handler(req, res) {
 
     if (!/^https:\/\/script\.google\.com\/macros\/s\/.+/i.test(cleanMacroUrl)) {
         return res.status(400).json({ error: 'Apps Script URL must start with https://script.google.com/macros/s/' });
+    }
+
+    // Optional profile photo: a small JPEG data URL, already cropped and
+    // resized in the browser (320x320). Anything else is rejected.
+    const cleanAvatar = typeof avatar === 'string' ? avatar.trim() : '';
+    if (cleanAvatar && (cleanAvatar.length > MAX_AVATAR_CHARS || !AVATAR_RE.test(cleanAvatar))) {
+        return res.status(400).json({ error: 'Profile photo is invalid or too large.' });
     }
 
     if (tooManyAttempts(req)) {
@@ -81,6 +92,7 @@ export default async function handler(req, res) {
             createdAt: new Date().toISOString(),
             addedBy: 'public-register'
         };
+        if (cleanAvatar) newAccount.avatar = cleanAvatar;
 
         await insertAccount(newAccount);
         return res.status(201).json({ success: true, email: newAccount.email });

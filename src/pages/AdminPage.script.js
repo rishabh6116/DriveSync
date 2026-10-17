@@ -12,7 +12,9 @@ export function initAdminPage() {
 
         // Mask passcode inputs without type="password", so browsers never
         // offer to save them via the native save-password popup.
-        ['adminPasscode', 'pCurrent', 'pNew', 'pConfirm'].forEach(id => {
+        // (The gate's own passcode field is a normal password input, like the
+        // main Sign in page, so its show/hide eye works.)
+        ['pCurrent', 'pNew', 'pConfirm'].forEach(id => {
             attachMaskedInput(document.getElementById(id));
         });
 
@@ -117,6 +119,7 @@ export function initAdminPage() {
             if (!val) return;
             ADMIN_PASSCODE = val;
             gateError.textContent = '';
+            gateError.style.display = 'none';
 
             try {
                 await loadAccounts(); // doubles as a passcode check
@@ -128,6 +131,16 @@ export function initAdminPage() {
             } catch (err) {
                 ADMIN_PASSCODE = '';
                 gateError.textContent = err.message || 'Invalid admin passcode.';
+                gateError.style.display = 'block';
+                const card = document.getElementById('gateCard');
+                if (card) {
+                    card.classList.remove('shake');
+                    void card.offsetWidth; // restart the animation
+                    card.classList.add('shake');
+                }
+                const field = document.getElementById('adminPasscode');
+                field.value = '';
+                field.focus();
             }
         }
 

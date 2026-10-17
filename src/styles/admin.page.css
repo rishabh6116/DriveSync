@@ -812,3 +812,101 @@ input:checked + .switch-slider {
     border: 1px solid rgba(255, 255, 255, 0.9);
     box-shadow: 0 20px 60px rgba(37, 99, 235, 0.08), 0 2px 6px rgba(16, 24, 40, 0.04);
 }
+
+/* ===== Admin gate: same look as the main Sign in card ===== */
+.gate .auth-card {
+    width: 360px;
+    max-width: calc(100vw - 40px);
+    padding: 2.25rem;
+    border-radius: var(--border-radius-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    text-align: center;
+}
+.gate .auth-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto;
+    background: transparent;
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.gate .auth-icon img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
+.gate .auth-title h2 { font-size: 18px; font-weight: 700; color: var(--color-text-primary); margin: 0 0 4px; }
+.gate .auth-title p { font-size: 13px; color: var(--color-text-secondary); margin: 0; }
+.gate .auth-input-container { position: relative; }
+.gate .auth-input {
+    width: 100%;
+    padding: 12px;
+    margin: 0;
+    font-size: 14px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-secondary);
+    color: var(--color-text-primary);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.gate .auth-input.auth-input-text { letter-spacing: normal; text-align: left; }
+.gate .auth-input.auth-has-eye { padding-right: 44px; }
+.gate .auth-input:focus { border-color: var(--color-border-secondary); box-shadow: none; }
+.gate .auth-eye {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    margin: 0;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+.gate .auth-eye:hover { color: var(--color-text-primary); }
+.gate .auth-eye svg { width: 18px; height: 18px; }
+.gate .auth-eye .eye-off { display: none; }
+.gate .auth-eye.on .eye-open { display: none; }
+.gate .auth-eye.on .eye-off { display: block; }
+.gate .auth-error-msg { color: #ef4444; font-size: 12px; font-weight: 500; display: none; margin: 0; }
+.gate .auth-card .btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.gate .auth-card .btn:active { transform: scale(0.97); }
+@keyframes gateShake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(8px); }
+    60% { transform: translateX(-5px); }
+    80% { transform: translateX(5px); }
+}
+.gate .auth-card.shake { animation: gateShake 0.4s ease; }
+@media (max-width: 380px) { .gate .auth-card { padding: 1.5rem; } }
+@media (prefers-reduced-motion: reduce) { .gate .auth-card.shake { animation: none; } }
+
+/* Light theme for the admin sign-in gate only: the admin page itself has no
+   light palette, so without this the input/text kept the dark colours on the
+   light card. Scoped to .gate so the admin panel after login is unchanged. */
+[data-theme="light"] .gate {
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f3f4f6;
+    --color-border-secondary: #e5e7eb;
+    --color-border-tertiary: #e5e7eb;
+    --color-text-primary: #111827;
+    --color-text-secondary: #4b5563;
+    --color-text-tertiary: #9ca3af;
+    --shadow-intensity: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"] .gate .auth-input::placeholder { color: #9ca3af; }

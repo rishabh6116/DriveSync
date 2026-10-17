@@ -73,7 +73,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
             authenticated: true,
             token: signSession(account),
-            account: { email: account.email, label: account.label },
+            account: { email: account.email, label: account.label, avatar: account.avatar || '' },
             config: {
                 macroUrl: account.macroUrl,
                 rootFolderId: account.rootFolderId

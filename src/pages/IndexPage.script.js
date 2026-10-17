@@ -137,6 +137,7 @@ export function initIndexPage() {
                 }
                 if (!meResp.ok) return false;
                 const me = await meResp.json();
+                window.__drivesyncAccount = me.account || null;
                 savedMacro = me.config.macroUrl;
                 savedRoot = me.config.rootFolderId;
                 localStorage.setItem('drivesync_macro', savedMacro);
@@ -156,6 +157,7 @@ export function initIndexPage() {
 
             hideAuthGate();
             document.getElementById('app').classList.add('authenticated');
+            applyProfile(window.__drivesyncAccount);
 
             Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
             refreshSessionSettingsAndArm();
@@ -261,6 +263,15 @@ export function initIndexPage() {
                 if (MACRO_WEBAPP_URL && ROOT_FOLDER_ID && sessionStorage.getItem('drivesync_token')) {
                     document.getElementById('app').classList.add('authenticated');
 
+                    // Refresh fix: restore the sidebar name + photo. Paint the cached
+                    // profile instantly (no flash of the default DriveSync logo),
+                    // then re-fetch the live profile from the server.
+                    try {
+                        const cachedAcct = JSON.parse(sessionStorage.getItem('drivesync_account') || 'null');
+                        if (cachedAcct) applyProfile(cachedAcct);
+                    } catch (err) { /* ignore a corrupt cache */ }
+                    refreshProfileFromServer();
+
                     // Restore last-visited folder/view after a hard refresh,
                     // instead of always snapping back to the root directory.
                     let restoredFolderId = ROOT_FOLDER_ID;
@@ -292,6 +303,7 @@ export function initIndexPage() {
                 sessionStorage.removeItem('drivesync_root');
                 sessionStorage.removeItem('drivesync_navstate');
                 sessionStorage.removeItem('drivesync_token');
+                sessionStorage.removeItem('drivesync_account');
 
                 // Try a silent persistent-login restore (e.g. a brand new tab
                 // when the admin has "stay logged in" enabled) before ever
@@ -402,6 +414,7 @@ export function initIndexPage() {
                     errorEl.style.display = 'none';
                     hideAuthGate();
                     appContainer.classList.add('authenticated');
+                    applyProfile(data.account);
                     Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
                     refreshSessionSettingsAndArm();
                     checkAddAccountVisibility();
@@ -424,12 +437,86 @@ export function initIndexPage() {
             }
         }
 
+        // =============================================
+        // PROFILE (sidebar photo + time-of-day greeting)
+        // =============================================
+        let greetingTimer = null;
+
+        function greetingForHour(h) {
+            if (h >= 5 && h < 12) return 'Good Morning';
+            if (h >= 12 && h < 17) return 'Good Afternoon';
+            if (h >= 17 && h < 21) return 'Good Evening';
+            return 'Good Night';
+        }
+
+        function applyProfile(account) {
+            const avatarEl = document.getElementById('sidebarAvatar');
+            const greetEl = document.getElementById('sidebarGreeting');
+            if (!avatarEl || !greetEl || !account) return;
+            window.__drivesyncAccount = account;
+            try { sessionStorage.setItem('drivesync_account', JSON.stringify(account)); } catch (err) { /* quota */ }
+
+            const fullName = String(account.label || '').trim();
+            // A label that is just an email address (older accounts) -> use the part before "@".
+            const base = fullName.includes('@') ? fullName.split('@')[0] : fullName;
+            const firstName = base.split(/\s+/)[0] || '';
+
+            avatarEl.textContent = '';
+            if (account.avatar && /^data:image\/jpeg;base64,/.test(account.avatar)) {
+                const img = document.createElement('img');
+                img.src = account.avatar;
+                img.alt = fullName || 'Profile photo';
+                avatarEl.appendChild(img);
+                avatarEl.classList.add('has-photo');
+            } else if (firstName) {
+                const span = document.createElement('span');
+                span.className = 'avatar-initial';
+                span.textContent = firstName.charAt(0).toUpperCase();
+                avatarEl.appendChild(span);
+                avatarEl.classList.add('has-photo');
+            }
+
+            const render = () => {
+                const hello = greetingForHour(new Date().getHours());
+                greetEl.textContent = '';
+                const helloEl = document.createElement('span');
+                helloEl.className = 'greet-hello';
+                helloEl.textContent = firstName ? hello + ',' : hello;
+                greetEl.appendChild(helloEl);
+                if (firstName) {
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'greet-name';
+                    nameEl.textContent = firstName;
+                    nameEl.title = fullName || firstName;
+                    greetEl.appendChild(nameEl);
+                }
+            };
+            render();
+            clearInterval(greetingTimer);
+            greetingTimer = setInterval(render, 60 * 1000);
+        }
+
+        async function refreshProfileFromServer() {
+            try {
+                const resp = await fetch('/api/me', {
+                    headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('drivesync_token') || '') }
+                });
+                if (resp.status === 401) { executeAppLogout(); return; }
+                if (!resp.ok) return;
+                const me = await resp.json();
+                if (me.account) applyProfile(me.account);
+            } catch (err) {
+                // Offline / network blip: keep whatever is already shown.
+            }
+        }
+
         function executeAppLogout() {
             sessionStorage.removeItem('drivesync_authenticated');
             sessionStorage.removeItem('drivesync_macro');
             sessionStorage.removeItem('drivesync_root');
             sessionStorage.removeItem('drivesync_navstate');
             sessionStorage.removeItem('drivesync_token');
+            sessionStorage.removeItem('drivesync_account');
             // Manual logout always fully clears the persistent mirror too,
             // regardless of the "stay logged in" admin setting.
             localStorage.removeItem('drivesync_authenticated');
@@ -438,6 +525,209 @@ export function initIndexPage() {
             localStorage.removeItem('drivesync_token');
             clearTabMarker();
             window.location.reload();
+        }
+
+        // =============================================
+        // EDIT PROFILE (name, photo, email, Drive folder)
+        // =============================================
+        const AVATAR_SIZE = 320;
+        let epAvatar = '';          // JPEG data URL, or '' for "no photo"
+        let epAvatarTouched = false;
+
+        function fileToAvatar(file) {
+            return new Promise((resolve, reject) => {
+                if (!file.type.startsWith('image/')) { reject(new Error('Please choose an image file.')); return; }
+                if (file.size > 15 * 1024 * 1024) { reject(new Error('That photo is too large (max 15 MB).')); return; }
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const side = Math.min(img.naturalWidth, img.naturalHeight);
+                        const sx = (img.naturalWidth - side) / 2;
+                        const sy = (img.naturalHeight - side) / 2;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = canvas.height = AVATAR_SIZE;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+                        ctx.imageSmoothingQuality = 'high';
+                        ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+                        resolve(canvas.toDataURL('image/jpeg', 0.85));
+                    } catch {
+                        reject(new Error('Could not process that photo.'));
+                    } finally {
+                        URL.revokeObjectURL(url);
+                    }
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    reject(new Error('Could not read that photo. Try a JPG or PNG.'));
+                };
+                img.src = url;
+            });
+        }
+
+        function renderProfilePhotoPreview() {
+            const box = document.getElementById('epAvatarPreview');
+            const input = document.getElementById('epPhotoInput');
+            // keep the hidden file input, replace everything else
+            Array.from(box.childNodes).forEach(n => { if (n !== input) box.removeChild(n); });
+            if (epAvatar) {
+                const img = document.createElement('img');
+                img.src = epAvatar;
+                img.alt = 'Profile photo';
+                box.insertBefore(img, input);
+            } else {
+                const name = document.getElementById('epName').value.trim();
+                const base = name.includes('@') ? name.split('@')[0] : name;
+                const span = document.createElement('span');
+                span.className = 'avatar-initial';
+                if (base.charAt(0)) span.textContent = base.charAt(0).toUpperCase();
+                else span.innerHTML = '<i class="ti ti-user"></i>';
+                box.insertBefore(span, input);
+            }
+            document.getElementById('epRemoveBtn').style.display = epAvatar ? 'inline' : 'none';
+            document.getElementById('epUploadBtn').textContent = epAvatar ? 'Change photo' : 'Upload photo';
+        }
+
+        async function handleProfilePhotoPick(e) {
+            const file = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!file) return;
+            const errEl = document.getElementById('editProfileError');
+            try {
+                epAvatar = await fileToAvatar(file);
+                epAvatarTouched = true;
+                errEl.style.display = 'none';
+                renderProfilePhotoPreview();
+            } catch (err) {
+                errEl.innerText = err.message || 'Could not use that photo.';
+                errEl.style.display = 'block';
+            }
+        }
+
+        function removeProfilePhoto() {
+            epAvatar = '';
+            epAvatarTouched = true;
+            renderProfilePhotoPreview();
+        }
+
+        function openEditProfileModal() {
+            const acct = window.__drivesyncAccount || {};
+            epAvatar = acct.avatar || '';
+            epAvatarTouched = false;
+
+            document.getElementById('epName').value = acct.label || '';
+            document.getElementById('epEmail').value = acct.email || '';
+            document.getElementById('epFolder').value = ROOT_FOLDER_ID || '';
+            document.getElementById('epMacroUrl').value = MACRO_WEBAPP_URL || '';
+            document.getElementById('epNewPassword').value = '';
+            document.getElementById('epConfirmPassword').value = '';
+            document.getElementById('epCurrentPassword').value = '';
+
+            const errEl = document.getElementById('editProfileError');
+            errEl.style.display = 'none';
+            errEl.innerText = '';
+
+            renderProfilePhotoPreview();
+            document.getElementById('editProfileModal').classList.add('open');
+            pushNavState();
+        }
+
+        function closeEditProfileModal() {
+            document.getElementById('editProfileModal').classList.remove('open');
+        }
+
+        async function submitEditProfile() {
+            const acct = window.__drivesyncAccount || {};
+            const label = document.getElementById('epName').value.trim();
+            const email = document.getElementById('epEmail').value.trim();
+            const folderId = extractFolderId(document.getElementById('epFolder').value);
+            const macroUrl = document.getElementById('epMacroUrl').value.trim();
+            const newPassword = document.getElementById('epNewPassword').value;
+            const confirmPassword = document.getElementById('epConfirmPassword').value;
+            const currentPassword = document.getElementById('epCurrentPassword').value;
+            const errEl = document.getElementById('editProfileError');
+            const submitBtn = document.getElementById('submitEditProfileBtn');
+
+            const fail = (msg) => { errEl.innerText = msg; errEl.style.display = 'block'; };
+            errEl.style.display = 'none';
+
+            if (!label) return fail('Please enter your name.');
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Enter a valid email.');
+            if (!folderId) return fail('Paste your Google Drive folder link.');
+            if (!/^https:\/\/script\.google\.com\/macros\/s\/.+/i.test(macroUrl)) return fail('Enter a valid Apps Script URL.');
+
+            const emailChanged = email.toLowerCase() !== String(acct.email || '').toLowerCase();
+            const macroChanged = macroUrl !== MACRO_WEBAPP_URL;
+            const wantsPasswordChange = !!(newPassword || confirmPassword);
+
+            if (wantsPasswordChange) {
+                if (!newPassword || !confirmPassword) return fail('Please fill in both new password fields.');
+                if (newPassword !== confirmPassword) return fail('New password and confirmation do not match.');
+                if (newPassword === currentPassword) return fail('New password must be different from the current one.');
+            }
+            const anyChange = label !== String(acct.label || '') || emailChanged || folderId !== ROOT_FOLDER_ID
+                || macroChanged || epAvatarTouched || wantsPasswordChange;
+            if (!anyChange) {
+                closeEditProfileModal();
+                showToast('No changes to save.');
+                return;
+            }
+            if (!currentPassword) return fail('Enter your current password to save changes.');
+
+            const payload = { label, email, rootFolderId: folderId, macroUrl, currentPassword };
+            if (epAvatarTouched) payload.avatar = epAvatar;
+            if (wantsPasswordChange) payload.newPassword = newPassword;
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Saving...';
+
+            try {
+                const response = await fetch('/api/me', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + (sessionStorage.getItem('drivesync_token') || '')
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                let data;
+                try { data = await response.json(); } catch { throw new Error('Server did not return a valid response.'); }
+                if (!response.ok || !data.success) throw new Error(data.error || 'Failed to save profile.');
+
+                closeEditProfileModal();
+
+                if (data.passwordChanged) {
+                    // Password changed -> every old session token is invalid, so sign in again.
+                    executeAppLogout();
+                    return;
+                }
+
+                applyProfile(data.account);
+
+                if (data.config && data.config.macroUrl && data.config.macroUrl !== MACRO_WEBAPP_URL) {
+                    MACRO_WEBAPP_URL = data.config.macroUrl;
+                    sessionStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
+                    if (localStorage.getItem('drivesync_macro')) localStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
+                    reloadCurrentFolder();
+                }
+
+                if (data.config && data.config.rootFolderId && data.config.rootFolderId !== ROOT_FOLDER_ID) {
+                    ROOT_FOLDER_ID = data.config.rootFolderId;
+                    sessionStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
+                    if (localStorage.getItem('drivesync_root')) localStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
+                    goToHomeView();
+                    loadDriveContents(ROOT_FOLDER_ID);
+                }
+                showToast(data.changed ? 'Profile updated.' : 'No changes to save.');
+            } catch (err) {
+                fail(err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Save';
+            }
         }
 
         // =============================================
@@ -798,6 +1088,7 @@ export function initIndexPage() {
                     folderModal: closeFolderModal,
                     renameModal: closeRenameModal,
                     changePasswordModal: closeChangePasswordModal,
+                    editProfileModal: closeEditProfileModal,
                     addAccountModal: closeAddAccountModal,
                     registerModal: closeRegisterModal,
                     deleteModal: closeDeleteModal,
@@ -1486,7 +1777,7 @@ export function initIndexPage() {
                     <div class="fname" ${rowClickAction}>
                         <div class="ficon" style="background:${badgeBg};color:${badgeTxt}">${iconHtml}</div>
                         <div>
-                            <div class="fname-text${cat === 'folder' ? ' folder-pill' : ''}">${esc(f.name)}</div>
+                            <div class="fname-text${cat === 'folder' ? ' folder-pill' : ''}" title="${esc(f.name)}">${esc(f.name)}</div>
                             ${pathSub}
                         </div>
                     </div>
@@ -1497,7 +1788,11 @@ export function initIndexPage() {
                             onclick="handleRenameItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')" title="Rename">
                             <i class="ti ti-edit"></i>
                         </button>
-                        <button class="btn-delete" onclick="handleDeleteItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')">
+                        ${cat === 'folder' ? '' : `<button class="btn-delete btn-download" style="color:#3b82f6;border-color:rgba(59,130,246,0.3);"
+                            onclick="downloadDriveFile('${f.id}')" title="Download">
+                            <i class="ti ti-download"></i>
+                        </button>`}
+                        <button class="btn-delete" title="Delete" onclick="handleDeleteItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')">
                             <i class="ti ti-trash"></i>
                         </button>
                     </div>
@@ -1705,10 +2000,22 @@ export function initIndexPage() {
             }
         }
 
+        function downloadDriveFile(id) {
+            if (!id) return;
+            // Hidden iframe: Drive answers with "Content-Disposition: attachment", so the
+            // browser saves the file directly - no new tab, and this page stays put.
+            const frame = document.createElement('iframe');
+            frame.style.display = 'none';
+            frame.setAttribute('aria-hidden', 'true');
+            frame.src = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`;
+            document.body.appendChild(frame);
+            setTimeout(() => frame.remove(), 2 * 60 * 1000);
+        }
+
         function handleDeleteItem(id, type, name) {
             pendingDeleteTarget = { id, type };
             const modal = document.getElementById('deleteModal');
-            document.getElementById('deleteModalMessage').innerHTML = `Are you absolutely sure you want to delete the ${type} <strong>"${esc(name)}"</strong>? This process cannot be undone.`;
+            document.getElementById('deleteModalMessage').innerHTML = `Delete <strong>"${esc(name)}"</strong>?`;
             modal.classList.add('open');
             document.getElementById('confirmDeleteBtn').onclick = executeItemDeletion;
             pushNavState();
@@ -2275,6 +2582,13 @@ export function initIndexPage() {
         window.closeRegisterModal = closeRegisterModal;
         window.submitRegister = submitRegister;
         window.openChangePasswordModal = openChangePasswordModal;
+        window.downloadDriveFile = downloadDriveFile;
+        window.openEditProfileModal = openEditProfileModal;
+        window.closeEditProfileModal = closeEditProfileModal;
+        window.submitEditProfile = submitEditProfile;
+        window.handleProfilePhotoPick = handleProfilePhotoPick;
+        window.removeProfilePhoto = removeProfilePhoto;
+        window.extractFolderId = extractFolderId;
         checkRegisterEnabled();
 
         // Coming back from /register: prefill the new email on the sign-in form.

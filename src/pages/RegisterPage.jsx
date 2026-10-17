@@ -22,7 +22,46 @@ function validate(v) {
     return '';
 }
 
+// Crops the picture to a centred square and shrinks it to 320x320, so the
+// saved photo stays sharp in the sidebar but only weighs ~30-60 KB.
+const AVATAR_SIZE = 320;
+const AVATAR_MAX_FILE = 15 * 1024 * 1024;
+
+function fileToAvatar(file) {
+    return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/')) { reject(new Error('Please choose an image file.')); return; }
+        if (file.size > AVATAR_MAX_FILE) { reject(new Error('That photo is too large (max 15 MB).')); return; }
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const side = Math.min(img.naturalWidth, img.naturalHeight);
+                const sx = (img.naturalWidth - side) / 2;
+                const sy = (img.naturalHeight - side) / 2;
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = AVATAR_SIZE;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff'; // JPEG has no transparency
+                ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+            } catch {
+                reject(new Error('Could not process that photo.'));
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Could not read that photo. Try a JPG or PNG.'));
+        };
+        img.src = url;
+    });
+}
+
 const ICONS = {
+    camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></>,
     user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
     mail: <><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>,
     lock: <><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
@@ -53,6 +92,7 @@ export default function RegisterPage() {
     const [copied, setCopied] = useState(false);
     const [showPw, setShowPw] = useState(false);
     const [showPw2, setShowPw2] = useState(false);
+    const [avatar, setAvatar] = useState('');
 
     const folderId = values.rootFolderId.trim();
     const script = useMemo(
@@ -113,6 +153,18 @@ export default function RegisterPage() {
         if (error) setError('');
     };
 
+    async function handleAvatarPick(e) {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = ''; // lets the same file be picked again
+        if (!file) return;
+        try {
+            setAvatar(await fileToAvatar(file));
+            if (error) setError('');
+        } catch (err) {
+            setError(err.message || 'Could not use that photo.');
+        }
+    }
+
     async function handleSubmit(ev) {
         ev.preventDefault();
         if (submitting) return;
@@ -133,7 +185,8 @@ export default function RegisterPage() {
                     email: cleaned.email.trim(),
                     password: cleaned.password,
                     macroUrl: cleaned.macroUrl.trim(),
-                    rootFolderId: cleaned.rootFolderId.trim()
+                    rootFolderId: cleaned.rootFolderId.trim(),
+                    avatar
                 })
             });
             let data;
@@ -154,10 +207,6 @@ export default function RegisterPage() {
         }
     }
 
-    const logo = (
-        <div className="rg-icon"><img src="/android-chrome-192x192.png?v=3" alt="DriveSync" /></div>
-    );
-
     if (done) {
         return (
             <div className="register-page">
@@ -175,7 +224,6 @@ export default function RegisterPage() {
         return (
             <div className="register-page">
                 <div className="rg-card rg-reg rg-reg-center">
-                    {logo}
                     <h2>Registration is closed</h2>
                     <p className="rg-reg-sub">New accounts can't be created right now.</p>
                 </div>
@@ -191,10 +239,23 @@ export default function RegisterPage() {
         <div className="register-page">
             <form className="rg-card rg-reg rg-wide" onSubmit={handleSubmit} noValidate>
                 <aside className="rg-side">
-                    {logo}
                     <div className="rg-title">
                         <h2>Create account</h2>
                         <p>Connect your own Google Drive folder to DriveSync</p>
+                    </div>
+                    <div className="rg-avatar-pick">
+                        <label className="rg-avatar-btn" title="Add profile photo">
+                            {avatar
+                                ? <img src={avatar} alt="Your profile photo" />
+                                : <span className="rg-avatar-empty"><Icon name="camera" /></span>}
+                            <input type="file" accept="image/*" onChange={handleAvatarPick} hidden />
+                        </label>
+                        <div className="rg-avatar-text">
+                            <span>{avatar ? 'Looking good!' : 'Add profile photo'}</span>
+                            {avatar
+                                ? <button type="button" className="rg-avatar-link" onClick={() => setAvatar('')}>Remove</button>
+                                : <small>Optional · shown on your dashboard</small>}
+                        </div>
                     </div>
                 </aside>
 
@@ -229,7 +290,7 @@ export default function RegisterPage() {
 
                         <div className={'rg-folder-row rg-span' + (script ? ' has-copy' : '')}>
                             <div className="rg-ifield">
-                                <input className="rg-input" type="text" placeholder="Paste Google Drive folder link"
+                                <input className="rg-input" type="text" placeholder="Drive link"
                                     autoComplete="off" autoCapitalize="off" spellCheck={false}
                                     value={values.rootFolderId} onChange={set('rootFolderId')} />
                             </div>
