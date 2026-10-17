@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
                     <div className="rg-status info"><MailIcon /></div>
                     <div className="rg-title">
                         <h2>Check your email</h2>
-                        <p>If an account exists for <strong>{email.trim()}</strong>, we've sent a reset link.</p>
+                        <p>We've sent a reset link to <strong>{email.trim()}</strong>.</p>
                     </div>
                     <p className="rg-note">The link is valid for <strong>10 minutes</strong> and works only once. Also check your spam folder.</p>
                     <button type="button" className="rg-btn rg-btn-ghost" onClick={() => setSent(false)}>Use a different email</button>

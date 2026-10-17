@@ -132,8 +132,6 @@ export function initThemePage() {
         }
 
         // Security Lockout Configuration
-        const MAX_ATTEMPTS = 3;
-        const LOCKOUT_DURATION = 1 * 60 * 60 * 1000; // 1 hour in milliseconds
         let lockoutTimerInterval = null; // Reference for the live countdown interval
 
         // Theme Configuration Manager
@@ -174,56 +172,13 @@ export function initThemePage() {
         }
 
         function checkLockoutState() {
-            const lockoutExpiry = localStorage.getItem('drivesync_lockout_expiry');
-            const errorEl = document.getElementById('authError');
+            // Client-side lockout removed: clear any stale lock left in this browser.
+            clearInterval(lockoutTimerInterval);
+            localStorage.removeItem('drivesync_lockout_expiry');
+            localStorage.removeItem('drivesync_failed_attempts');
+            setGateInputsDisabled(false);
             const unlockBtn = document.querySelector('#authGate .btn-primary');
-
-            if (lockoutExpiry) {
-                const remainingTime = parseInt(lockoutExpiry, 10) - Date.now();
-
-                if (remainingTime > 0) {
-                    setGateInputsDisabled(true);
-                    if (unlockBtn) unlockBtn.disabled = true;
-                    errorEl.style.display = 'block';
-
-                    // Clear any duplicate running intervals
-                    clearInterval(lockoutTimerInterval);
-
-                    // Update UI text instantly every second
-                    const updateCountdownUI = () => {
-                        const timeLeft = parseInt(localStorage.getItem('drivesync_lockout_expiry'), 10) - Date.now();
-
-                        if (timeLeft <= 0) {
-                            clearInterval(lockoutTimerInterval);
-                            localStorage.removeItem('drivesync_lockout_expiry');
-                            localStorage.removeItem('drivesync_failed_attempts');
-                            setGateInputsDisabled(false);
-                            if (unlockBtn) unlockBtn.disabled = false;
-                            errorEl.style.display = 'none';
-                        } else {
-                            const minutes = Math.floor(timeLeft / (60 * 1000));
-                            const seconds = Math.floor((timeLeft % (60 * 1000)) / 1000);
-
-                            const paddedMinutes = String(minutes).padStart(2, '0');
-                            const paddedSeconds = String(seconds).padStart(2, '0');
-
-                            errorEl.innerText = `Too many incorrect attempts. App locked. Try again in ${paddedMinutes}:${paddedSeconds}`;
-                        }
-                    };
-
-                    updateCountdownUI();
-                    lockoutTimerInterval = setInterval(updateCountdownUI, 1000);
-                    return true;
-                } else {
-                    // Lockout expired, clear security parameters cleanly
-                    clearInterval(lockoutTimerInterval);
-                    localStorage.removeItem('drivesync_lockout_expiry');
-                    localStorage.removeItem('drivesync_failed_attempts');
-                    setGateInputsDisabled(false);
-                    if (unlockBtn) unlockBtn.disabled = false;
-                    errorEl.style.display = 'none';
-                }
-            }
+            if (unlockBtn) unlockBtn.disabled = false;
             return false;
         }
 
@@ -397,19 +352,8 @@ export function initThemePage() {
                     authCard.classList.add('shake');
                 }
 
-                // Increment tracking mechanisms dynamically
-                let currentAttempts = parseInt(localStorage.getItem('drivesync_failed_attempts') || '0', 10);
-                currentAttempts++;
-                localStorage.setItem('drivesync_failed_attempts', currentAttempts);
-
-                if (currentAttempts >= MAX_ATTEMPTS) {
-                    const expiryTimestamp = Date.now() + LOCKOUT_DURATION;
-                    localStorage.setItem('drivesync_lockout_expiry', expiryTimestamp);
-                    checkLockoutState();
-                } else {
-                    errorEl.style.display = 'block';
-                    errorEl.innerText = `${err.message || "Invalid email or password."} (${MAX_ATTEMPTS - currentAttempts} attempt(s) remaining)`;
-                }
+                errorEl.style.display = 'block';
+                errorEl.innerText = err.message || "Invalid email or password.";
 
                 pwField.value = '';
                 pwField.focus();
