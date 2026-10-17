@@ -1,5 +1,6 @@
 import { markTabActive, isSameTabSession, clearTabMarker } from '../lib/tabSession.js';
 import { getMaskedValue, clearMaskedInput } from '../lib/maskedInput.js';
+import { rememberAccount, getLastAccount, getAccountByEmail } from '../lib/rememberedAccount.js';
 import {
     ensureNotesFolder, listNotes, loadNoteContent, createNote, saveNoteContent, deleteNote,
 } from '../lib/notes.js';
@@ -240,6 +241,39 @@ export function initIndexPage() {
 
         window.addEventListener('resize', updateSearchPlaceholder);
 
+        // Returning visitor: show the remembered account's photo on the sign-in
+        // card instead of the default DriveSync logo. Typing an email that matches
+        // another remembered account swaps to that account's photo.
+        const DEFAULT_GATE_LOGO = '/android-chrome-192x192.png?v=3';
+
+        function setGateLogo(account) {
+            const holder = document.getElementById('authIconLogo');
+            const img = holder && holder.querySelector('img');
+            if (!img) return;
+            if (account && account.avatar) {
+                img.src = account.avatar;
+                img.alt = account.label || 'Profile photo';
+                holder.classList.add('has-account-photo');
+            } else {
+                img.src = DEFAULT_GATE_LOGO;
+                img.alt = 'DriveSync';
+                holder.classList.remove('has-account-photo');
+            }
+        }
+
+        function initRememberedGateLogo() {
+            setGateLogo(getLastAccount());
+            const emailEl = document.getElementById('gateEmail');
+            if (!emailEl) return;
+            // Only swap when the typed email EXACTLY matches a remembered account.
+            // Partial / unknown emails keep the last account's photo, so the logo
+            // never flips to the default while typing.
+            emailEl.addEventListener('input', () => {
+                const matched = getAccountByEmail(emailEl.value.trim());
+                setGateLogo(matched || getLastAccount());
+            });
+        }
+
         // Runs immediately (synchronously, as soon as the page markup exists)
         // instead of waiting for window "load" — "load" only fires once every
         // image/font/script has finished, which is late enough that the
@@ -251,6 +285,7 @@ export function initIndexPage() {
         (async () => {
             initTheme();
             updateSearchPlaceholder();
+            initRememberedGateLogo();
 
             // First step verification enforcement check on load
             checkLockoutState();
@@ -455,6 +490,7 @@ export function initIndexPage() {
             if (!avatarEl || !greetEl || !account) return;
             window.__drivesyncAccount = account;
             try { sessionStorage.setItem('drivesync_account', JSON.stringify(account)); } catch (err) { /* quota */ }
+            rememberAccount(account);
 
             const fullName = String(account.label || '').trim();
             // A label that is just an email address (older accounts) -> use the part before "@".

@@ -2571,3 +2571,8 @@ html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !impo
 #fileTablePanel.view-grid .trow:not(.clickable-row):not(:has(.back-link-text)) > div:nth-child(2) {
     margin-top: auto;
 }
+
+/* Remembered account photo on the sign-in card */
+.auth-icon.has-account-photo {
+    border-radius: 50%;
+}
