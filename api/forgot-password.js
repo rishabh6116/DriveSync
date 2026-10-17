@@ -1,8 +1,8 @@
 // api/forgot-password.js
 //
 // POST { email } → emails a 10-minute, single-use password reset link.
-// Always answers with the same success message so the form can't be used to
-// find out which emails are registered.
+// The email is looked up in the accounts database first; if it isn't
+// registered the request is rejected (404) and no email is sent.
 
 import { findAccountByEmail } from '../lib/accounts.js';
 import { mailConfigured, sendMail } from '../lib/mailer.js';
@@ -49,8 +49,14 @@ export default async function handler(req, res) {
 
     try {
         const account = await findAccountByEmail(email);
+        if (!account) {
+            return res.status(404).json({ error: 'This email is not registered.' });
+        }
         // Static (config-file) accounts have fixed passwords and can't be reset here.
-        if (account && !account.isStatic) {
+        if (account.isStatic) {
+            return res.status(400).json({ error: "This account's password can't be reset here." });
+        }
+        {
             const token = await createResetToken(account);
             const link = `${baseUrl(req)}/reset-password?token=${token}`;
             await sendMail({

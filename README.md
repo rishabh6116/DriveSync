@@ -1,85 +1,108 @@
+<div align="center">
+
 # DriveSync
 
-DriveSync is a multi-account personal drive/dashboard app. Users sign in with an **email and password**, and each account is actually backed by its own Google Drive folder, connected through a small Apps Script bridge rather than any central file storage. It's built as a React SPA on Vercel serverless functions, with MongoDB Atlas storing accounts and settings.
+**A personal cloud dashboard where every account is backed by its own Google Drive folder.**
 
-## What it does
+React · Vite · Vercel Serverless · MongoDB Atlas
 
-- **Email + password login** — Accounts are looked up by email; passwords are stored only as scrypt hashes (never plaintext). A successful login returns a signed session token that the browser keeps for the tab session (optionally persisted by the admin's "stay logged in" setting). Accounts come from two sources: accounts hardcoded in `api/config.js` and accounts added dynamically at runtime.
-- **Bring-your-own Drive storage** — DriveSync doesn't host files itself. Each account points at a Google Apps Script web app deployed on someone's own Google Drive, which exposes their chosen folder (list, upload, create folder, delete).
-- **Dynamic accounts** — New accounts can be added two ways:
-  - By an **admin**, through the Admin panel's "Existing Accounts" view.
-  - By **users themselves**, via a self-service "Add Account" link — but only if the admin has turned this on (globally, for all users, or for specific users) from the Feature Access settings.
-- **Self password change** — A logged-in user can change their own password (and script URL) from inside the app.
-- **Admin panel** — A separate area protected by the admin passcode (unchanged) for:
-  - Managing accounts (view/add/remove, each tied to a Drive folder ID + Apps Script macro URL)
-  - Controlling the "Add Account" self-service feature (off / all users / specific users)
-  - Managing app theme/appearance
-- **MongoDB as backend storage** — Accounts and admin/feature settings live in MongoDB Atlas (`accounts` and `settings` collections). A unique index on `email` prevents duplicate accounts, and writes touch a single document instead of rewriting a whole file.
-- **Install prompt** — A one-time "Install App" banner appears on mobile browsers (Android via the native install prompt, iOS via manual "Add to Home Screen" instructions), so the app can be used like a PWA.
+</div>
 
+<p align="center">
+  <img src="docs/screenshots/dashboard-dark.png" alt="DriveSync dashboard (dark)" width="900">
+</p>
 
-## Tech Stack
+## Features
 
-- **Frontend:** React 19, React Router, Vite
-- **Backend:** Vercel serverless functions (`/api`)
-- **Database:** MongoDB Atlas (official `mongodb` driver)
+- **Email + password login** with scrypt-hashed passwords and signed session tokens
+- **Bring your own storage** – files stay in your Google Drive, connected through a small Apps Script bridge
+- **Self-service sign-up** with a one-click *Copy Script code* helper for the Drive setup
+- **Forgot password** by email – reset link valid for 10 minutes, single use
+- **Drive browser** – folders, upload, preview, search, grid / list view, light & dark theme
+- **Notes** stored as text files inside your Drive
+- **Admin panel** to manage accounts, feature access and appearance
+- **Installable** as a PWA on mobile
 
-## Project Structure
+## Screenshots
 
-```
-drivesync/
-├── api/                    # Vercel serverless functions
-│   ├── auth.js               # Email + password login → signed session token
-│   ├── me.js                  # Session check (used to restore persisted logins)
-│   ├── account-password.js    # Self password / script URL change
-│   ├── self-add-account.js    # User self-service account creation
-│   ├── admin-accounts.js      # Admin: manage accounts
-│   ├── admin-passcode.js      # Admin: change the admin panel passcode
-│   └── feature-settings.js    # Admin: "Add Account" visibility toggle
-├── lib/                    # db.js (Mongo connection), accounts.js, settings.js, passwords.js, session.js, adminAuth.js, featureSettings.js
-├── scripts/hash-password.mjs # Generate a passwordHash for STATIC_ACCOUNTS
-├── src/
-│   ├── components/            # Shared React components (e.g. install prompt)
-│   ├── pages/                 # App pages — Index (main dashboard), Admin, Theme
-│   └── styles/                # Page-level CSS
-├── public/                  # Static assets, icons, favicons, PWA manifest
-└── vercel.json               # Vercel deployment config
-```
+| Sign in | Create account |
+|:---:|:---:|
+| <img src="docs/screenshots/login.png" width="420"> | <img src="docs/screenshots/register.png" width="420"> |
 
-## Getting Started
+| Dashboard (light) | Notes |
+|:---:|:---:|
+| <img src="docs/screenshots/dashboard-light.png" width="420"> | <img src="docs/screenshots/notes.png" width="420"> |
+
+| Forgot password |
+|:---:|
+| <img src="docs/screenshots/forgot-password.png" width="420"> |
+
+## Quick start
 
 ```bash
 npm install
-npm run dev        # start local dev server
-npm run build       # production build
-npm run preview      # preview production build
+cp .env.example .env     # fill in the values below
+npm run dev
 ```
 
-## Environment Variables
-
-Copy `.env.example` to `.env` and fill it in (and add the same variables in Vercel → Settings → Environment Variables):
-
-| Variable | What it is |
+| Command | Purpose |
 |---|---|
-| `MONGODB_URI` | Atlas connection string |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm run preview` | Preview the build |
+| `npm run lint` | Lint with oxlint |
+
+## Environment variables
+
+Set these in `.env` locally and in **Vercel → Settings → Environment Variables**.
+
+| Variable | Description |
+|---|---|
+| `MONGODB_URI` | MongoDB Atlas connection string |
 | `MONGODB_DB` | Database name (default `drivesync`) |
-| `ADMIN_PASSCODE` | First-time admin panel passcode. Once changed from inside the panel, only its hash is stored in MongoDB |
+| `ADMIN_PASSCODE` | First-time admin panel passcode |
 | `SESSION_SECRET` | Long random string used to sign login tokens |
-| `APP_URL` | Public site URL used in password-reset email links, e.g. `https://mydockerr.vercel.app` (no trailing slash) |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` | SMTP details for reset emails (Gmail: use an App Password) |
+| `MAIL_FROM` | Sender address for reset emails |
+| `APP_URL` | Public site URL, e.g. `https://mydockerr.vercel.app` (no trailing slash) |
 
-## First-time setup
+## Setup
 
-1. Create a free MongoDB Atlas cluster (pick Mumbai / `ap-south-1` if your users are in India; `vercel.json` already sets the Vercel function region to `bom1` — change or remove it if your cluster is elsewhere). Create a database user and, under **Network Access**, allow `0.0.0.0/0` (Vercel's IPs aren't fixed).
-2. Set the env vars above locally and on Vercel.
-3. Open `/adminaccount`, enter `ADMIN_PASSCODE`, and add your first account (email, password, Apps Script URL, Drive folder ID). Indexes are created automatically on first use.
+1. **Database** – create a free MongoDB Atlas cluster and allow `0.0.0.0/0` under *Network Access*. `vercel.json` sets the function region to `bom1`; change it if your cluster is elsewhere.
+2. **Deploy** – import the repo on Vercel and add the environment variables.
+3. **First account** – open `/adminaccount`, enter `ADMIN_PASSCODE`, and add an account. Or let users register themselves at `/register`.
+4. **Drive bridge** – on the register page paste your Drive folder link, click **Copy Script code**, create a project at [script.google.com](https://script.google.com), paste the code and deploy it as a Web app (execute as *Me*, access *Anyone*), then paste the Web app URL back.
 
-## Authentication notes
+## Pages
 
-- **Passwords:** no length or complexity rules (any non-empty string), hashed with scrypt (`lib/passwords.js`). Emails are stored lowercase and must be unique.
-- **Sessions:** `POST /api/auth` returns a token (valid 30 days) that the client sends as `Authorization: Bearer <token>`. Tokens stop working when the account is deleted or its password changes.
-- **Hardcoded accounts:** run `node scripts/hash-password.mjs "password"` and put the output in `STATIC_ACCOUNTS` as `passwordHash` (with an `email`).
-- **Not included:** "forgot password" / email verification (needs an email provider).
+| Route | Page |
+|---|---|
+| `/` | Sign in and drive dashboard |
+| `/register` | Create account |
+| `/forgot-password` · `/reset-password` | Password reset |
+| `/theme` | Appearance settings |
+| `/adminaccount` | Admin panel |
+| `/setup` | Apps Script setup guide |
+
+## Project structure
+
+```
+api/         Vercel serverless functions (auth, register, reset, admin…)
+lib/         Server helpers (db, accounts, passwords, sessions, mailer)
+src/pages/   React pages
+src/lib/     Client helpers (notes, sync, session)
+src/styles/  Page CSS
+backend/     Code.gs – Apps Script bridge
+public/      Icons and PWA manifest
+scripts/     hash-password.mjs, test-mail.mjs
+```
+
+## Security notes
+
+- Passwords are hashed with scrypt and never stored in plain text.
+- Session tokens last 30 days and stop working when the account is deleted or its password changes.
+- Never commit `.env`; keep secrets only in Vercel and your local file.
 
 ## License
 
-Private project — not licensed for redistribution.
+Private project – not licensed for redistribution.

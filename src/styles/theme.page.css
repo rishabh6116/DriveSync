@@ -191,7 +191,7 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 1px;
+            gap: 6px;
             padding-bottom: 1.25rem;
             border-bottom: 1px solid var(--color-border-tertiary);
             margin-bottom: 12px;
