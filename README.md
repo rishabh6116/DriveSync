@@ -15,7 +15,8 @@ React · Vite · Vercel Serverless · MongoDB Atlas
 ## Features
 
 - **Email + password login** with scrypt-hashed passwords and signed session tokens
-- **Bring your own storage** – files stay in your Google Drive, connected through a small Apps Script bridge
+- **Sign in with Google or email + password** – Google users can set a password later and use both
+- **Bring your own storage** – users connect their own Google Drive with one tap (OAuth, `drive.file` scope); no script or folder ID to set up. See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)
 - **Self-service sign-up** with a one-click *Copy Script code* helper for the Drive setup
 - **Forgot password** by email – reset link valid for 10 minutes, single use
 - **Drive browser** – folders, upload, preview, search, grid / list view, light & dark theme
@@ -54,6 +55,9 @@ npm run dev
 
 ## Environment variables
 
+Google sign-in/Drive adds `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (and optional `APP_URL`, `TOKEN_ENC_KEY`) – see [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md). `.env.example` lists everything.
+
+
 Set these in `.env` locally and in **Vercel → Settings → Environment Variables**.
 
 | Variable | Description |
@@ -82,7 +86,7 @@ Set these in `.env` locally and in **Vercel → Settings → Environment Variabl
 | `/forgot-password` · `/reset-password` | Password reset |
 | `/theme` | Appearance settings |
 | `/adminaccount` | Admin panel |
-| `/setup` | Apps Script setup guide |
+| `/setup` | Apps Script setup guide (older accounts only) |
 
 ## Project structure
 
@@ -92,7 +96,10 @@ lib/         Server helpers (db, accounts, passwords, sessions, mailer)
 src/pages/   React pages
 src/lib/     Client helpers (notes, sync, session)
 src/styles/  Page CSS
-backend/     Code.gs – Apps Script bridge
+backend/     Code.gs – Apps Script bridge (only for older Apps Script accounts)
+lib/google.js, api/google.js   Google OAuth (sign in + connect Drive)
+src/lib/driveBridge.js         Drive API bridge used by the dashboard
+tests/       npm test
 public/      Icons and PWA manifest
 scripts/     hash-password.mjs, test-mail.mjs
 ```

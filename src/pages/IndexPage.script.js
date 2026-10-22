@@ -1,11 +1,16 @@
 import { markTabActive, isSameTabSession, clearTabMarker } from '../lib/tabSession.js';
 import { getMaskedValue, clearMaskedInput } from '../lib/maskedInput.js';
-import { rememberAccount, getLastAccount, getAccountByEmail } from '../lib/rememberedAccount.js';
+import { installDriveBridge, clearBridgeToken, NEEDS_CONNECT_EVENT } from '../lib/driveBridge.js';
 import {
     ensureNotesFolder, listNotes, loadNoteContent, createNote, saveNoteContent, deleteNote,
 } from '../lib/notes.js';
 
 export function initIndexPage() {
+        // Lets accounts connected with Google talk to the Drive API through the
+        // same code path the Apps Script accounts use (see src/lib/driveBridge.js).
+        installDriveBridge();
+        window.addEventListener(NEEDS_CONNECT_EVENT, () => showConnectGate());
+
         // Config settings fetched seamlessly from upstream runtime memory
         let MACRO_WEBAPP_URL = '';
         let ROOT_FOLDER_ID = '';
@@ -159,8 +164,10 @@ export function initIndexPage() {
             hideAuthGate();
             document.getElementById('app').classList.add('authenticated');
             applyProfile(window.__drivesyncAccount);
+            rememberConfig(me.config);
 
-            Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
+            if (ROOT_FOLDER_ID === 'pending') showConnectGate();
+            else Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
             refreshSessionSettingsAndArm();
             checkAddAccountVisibility();
             return true;
@@ -241,39 +248,6 @@ export function initIndexPage() {
 
         window.addEventListener('resize', updateSearchPlaceholder);
 
-        // Returning visitor: show the remembered account's photo on the sign-in
-        // card instead of the default DriveSync logo. Typing an email that matches
-        // another remembered account swaps to that account's photo.
-        const DEFAULT_GATE_LOGO = '/android-chrome-192x192.png?v=3';
-
-        function setGateLogo(account) {
-            const holder = document.getElementById('authIconLogo');
-            const img = holder && holder.querySelector('img');
-            if (!img) return;
-            if (account && account.avatar) {
-                img.src = account.avatar;
-                img.alt = account.label || 'Profile photo';
-                holder.classList.add('has-account-photo');
-            } else {
-                img.src = DEFAULT_GATE_LOGO;
-                img.alt = 'DriveSync';
-                holder.classList.remove('has-account-photo');
-            }
-        }
-
-        function initRememberedGateLogo() {
-            setGateLogo(getLastAccount());
-            const emailEl = document.getElementById('gateEmail');
-            if (!emailEl) return;
-            // Only swap when the typed email EXACTLY matches a remembered account.
-            // Partial / unknown emails keep the last account's photo, so the logo
-            // never flips to the default while typing.
-            emailEl.addEventListener('input', () => {
-                const matched = getAccountByEmail(emailEl.value.trim());
-                setGateLogo(matched || getLastAccount());
-            });
-        }
-
         // Runs immediately (synchronously, as soon as the page markup exists)
         // instead of waiting for window "load" — "load" only fires once every
         // image/font/script has finished, which is late enough that the
@@ -285,7 +259,9 @@ export function initIndexPage() {
         (async () => {
             initTheme();
             updateSearchPlaceholder();
-            initRememberedGateLogo();
+
+            // Coming back from Google (sign-in / connect Drive)? Handle it first.
+            const googleResult = await handleGoogleReturn();
 
             // First step verification enforcement check on load
             checkLockoutState();
@@ -297,15 +273,6 @@ export function initIndexPage() {
 
                 if (MACRO_WEBAPP_URL && ROOT_FOLDER_ID && sessionStorage.getItem('drivesync_token')) {
                     document.getElementById('app').classList.add('authenticated');
-
-                    // Refresh fix: restore the sidebar name + photo. Paint the cached
-                    // profile instantly (no flash of the default DriveSync logo),
-                    // then re-fetch the live profile from the server.
-                    try {
-                        const cachedAcct = JSON.parse(sessionStorage.getItem('drivesync_account') || 'null');
-                        if (cachedAcct) applyProfile(cachedAcct);
-                    } catch (err) { /* ignore a corrupt cache */ }
-                    refreshProfileFromServer();
 
                     // Restore last-visited folder/view after a hard refresh,
                     // instead of always snapping back to the root directory.
@@ -324,7 +291,9 @@ export function initIndexPage() {
                         }
                     }
 
-                    Promise.resolve(loadDriveContents(restoredFolderId)).then(() => replaceNavState());
+                    loadProfile();
+                    if (ROOT_FOLDER_ID === 'pending') showConnectGate();
+                    else Promise.resolve(loadDriveContents(restoredFolderId)).then(() => replaceNavState());
                     refreshSessionSettingsAndArm();
                     checkAddAccountVisibility();
                 } else {
@@ -338,7 +307,6 @@ export function initIndexPage() {
                 sessionStorage.removeItem('drivesync_root');
                 sessionStorage.removeItem('drivesync_navstate');
                 sessionStorage.removeItem('drivesync_token');
-                sessionStorage.removeItem('drivesync_account');
 
                 // Try a silent persistent-login restore (e.g. a brand new tab
                 // when the admin has "stay logged in" enabled) before ever
@@ -349,6 +317,8 @@ export function initIndexPage() {
                     showAuthGate();
                 }
             }
+
+            afterGoogleReturn(googleResult);
         })();
 
         function extractFolderId(value) {
@@ -450,7 +420,9 @@ export function initIndexPage() {
                     hideAuthGate();
                     appContainer.classList.add('authenticated');
                     applyProfile(data.account);
-                    Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
+                    rememberConfig(data.config);
+                    if (ROOT_FOLDER_ID === 'pending') showConnectGate();
+                    else Promise.resolve(loadDriveContents(ROOT_FOLDER_ID)).then(() => replaceNavState());
                     refreshSessionSettingsAndArm();
                     checkAddAccountVisibility();
                 } else {
@@ -473,6 +445,162 @@ export function initIndexPage() {
         }
 
         // =============================================
+        // GOOGLE (sign in, connect Drive)
+        // =============================================
+        function sessionToken() {
+            return sessionStorage.getItem('drivesync_token') || localStorage.getItem('drivesync_token') || '';
+        }
+
+        async function fetchMe(token) {
+            try {
+                const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + (token || sessionToken()) } });
+                if (!r.ok) return null;
+                return await r.json();
+            } catch {
+                return null;
+            }
+        }
+
+        function rememberConfig(cfg) {
+            window.__drivesyncConfig = cfg || {};
+        }
+
+        // Applies the Drive settings the server returned to this tab (and to the
+        // persistent copy when "stay logged in" is on).
+        function setDriveSession(cfg) {
+            MACRO_WEBAPP_URL = cfg.macroUrl || '';
+            ROOT_FOLDER_ID = cfg.rootFolderId || '';
+            sessionStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
+            sessionStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
+            if (localStorage.getItem('drivesync_authenticated') === 'true') {
+                localStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
+                localStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
+            }
+            rememberConfig(cfg);
+            clearBridgeToken();
+        }
+
+        // Refreshes name / photo / Drive status from the server (used after a
+        // page refresh, when only the session token is left in the tab).
+        async function loadProfile() {
+            const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + sessionToken() } }).catch(() => null);
+            if (!r) return;
+            if (r.status === 401) { executeAppLogout(); return; }
+            if (!r.ok) return;
+            const me = await r.json().catch(() => null);
+            if (!me) return;
+            applyProfile(me.account);
+            rememberConfig(me.config);
+        }
+
+        function googleErrorMessage(code) {
+            const messages = {
+                cancelled: 'Google sign-in was cancelled.',
+                not_configured: 'Google sign-in is not set up on this server yet.',
+                state: 'The Google sign-in expired. Please try again.',
+                exchange: 'Google could not complete the sign-in. Please try again.',
+                profile: 'Your Google account did not share a verified email address.',
+                registration_closed: 'New registrations are closed, so a new account can\u2019t be created with Google.',
+                static_account: 'That email belongs to a fixed account. Sign in with its password instead.',
+                exists: 'An account with that email already exists.',
+                account: 'Your session expired. Please log in again.',
+                drive_denied: 'DriveSync needs permission to create files in your Drive. Please tap Connect and allow it.',
+                google_in_use: 'That Google account is already connected to another DriveSync account.',
+                no_refresh: 'Google did not finish the connection. Please try again.',
+                drive_error: 'Google Drive could not be set up. Make sure the Google Drive API is enabled, then try again.',
+                session: 'Could not start your session. Please sign in again.'
+            };
+            return messages[code] || 'Something went wrong with Google. Please try again.';
+        }
+
+        // Reads the result Google's redirect left in the URL fragment.
+        async function handleGoogleReturn() {
+            const hash = window.location.hash.replace(/^#/, '');
+            if (!/(^|&)(gauth|gdone|gerror)=/.test(hash)) return null;
+            const params = new URLSearchParams(hash);
+            // Remove the fragment right away so the token never lingers in the address bar/history.
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+
+            if (params.get('gerror')) return { error: params.get('gerror') };
+
+            if (params.get('gauth')) {
+                const token = params.get('gauth');
+                const me = await fetchMe(token);
+                if (!me) return { error: 'session' };
+                sessionStorage.setItem('drivesync_token', token);
+                setDriveSession(me.config);
+                sessionStorage.setItem('drivesync_authenticated', 'true');
+                localStorage.removeItem('drivesync_failed_attempts');
+                localStorage.removeItem('drivesync_lockout_expiry');
+                markTabActive();
+                window.__drivesyncAccount = me.account;
+                return { login: true, setpw: params.get('setpw') === '1', warn: params.get('warn') || '' };
+            }
+
+            // gdone: Drive connected for the account that is already signed in.
+            const me = await fetchMe();
+            if (me) {
+                setDriveSession(me.config);
+                window.__drivesyncAccount = me.account;
+            }
+            return { connected: true };
+        }
+
+        function afterGoogleReturn(result) {
+            if (!result) return;
+            const signedIn = sessionStorage.getItem('drivesync_authenticated') === 'true';
+
+            if (result.error) {
+                const msg = googleErrorMessage(result.error);
+                if (signedIn) { showToast(msg); return; }
+                const el = document.getElementById('authError');
+                if (el) { el.style.display = 'block'; el.style.color = ''; el.innerText = msg; }
+                return;
+            }
+            if (result.connected) showToast('Google Drive connected!');
+            if (result.warn) showToast('Signed in, but Google Drive could not be set up. Tap Connect Google Drive.');
+            if (result.setpw && ROOT_FOLDER_ID !== 'pending') {
+                setTimeout(() => openEditProfileModal({
+                    banner: 'Welcome! You signed in with Google. You can also set a password to sign in with your email later. This is optional.'
+                }), 700);
+            }
+        }
+
+        function loginWithGoogle() {
+            window.location.href = '/api/google?action=login';
+        }
+
+        function showConnectGate() {
+            const el = document.getElementById('connectDriveOverlay');
+            if (el) el.classList.add('visible');
+        }
+
+        function hideConnectGate() {
+            const el = document.getElementById('connectDriveOverlay');
+            if (el) el.classList.remove('visible');
+        }
+
+        async function connectGoogleDrive() {
+            const btn = document.getElementById('connectDriveBtn');
+            const err = document.getElementById('connectDriveError');
+            if (btn) btn.disabled = true;
+            if (err) err.style.display = 'none';
+            try {
+                const r = await fetch('/api/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionToken() },
+                    body: JSON.stringify({ action: 'connect' })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || !d.url) throw new Error(d.error || 'Could not start the Google connection.');
+                window.location.href = d.url;
+            } catch (e) {
+                if (err) { err.innerText = e.message; err.style.display = 'block'; }
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        // =============================================
         // PROFILE (sidebar photo + time-of-day greeting)
         // =============================================
         let greetingTimer = null;
@@ -489,8 +617,6 @@ export function initIndexPage() {
             const greetEl = document.getElementById('sidebarGreeting');
             if (!avatarEl || !greetEl || !account) return;
             window.__drivesyncAccount = account;
-            try { sessionStorage.setItem('drivesync_account', JSON.stringify(account)); } catch (err) { /* quota */ }
-            rememberAccount(account);
 
             const fullName = String(account.label || '').trim();
             // A label that is just an email address (older accounts) -> use the part before "@".
@@ -532,27 +658,13 @@ export function initIndexPage() {
             greetingTimer = setInterval(render, 60 * 1000);
         }
 
-        async function refreshProfileFromServer() {
-            try {
-                const resp = await fetch('/api/me', {
-                    headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('drivesync_token') || '') }
-                });
-                if (resp.status === 401) { executeAppLogout(); return; }
-                if (!resp.ok) return;
-                const me = await resp.json();
-                if (me.account) applyProfile(me.account);
-            } catch (err) {
-                // Offline / network blip: keep whatever is already shown.
-            }
-        }
-
         function executeAppLogout() {
+            clearBridgeToken();
             sessionStorage.removeItem('drivesync_authenticated');
             sessionStorage.removeItem('drivesync_macro');
             sessionStorage.removeItem('drivesync_root');
             sessionStorage.removeItem('drivesync_navstate');
             sessionStorage.removeItem('drivesync_token');
-            sessionStorage.removeItem('drivesync_account');
             // Manual logout always fully clears the persistent mirror too,
             // regardless of the "stay logged in" admin setting.
             localStorage.removeItem('drivesync_authenticated');
@@ -564,7 +676,7 @@ export function initIndexPage() {
         }
 
         // =============================================
-        // EDIT PROFILE (name, photo, email, Drive folder)
+        // EDIT PROFILE (name, photo, email, password, Google Drive)
         // =============================================
         const AVATAR_SIZE = 320;
         let epAvatar = '';          // JPEG data URL, or '' for "no photo"
@@ -648,8 +760,39 @@ export function initIndexPage() {
             renderProfilePhotoPreview();
         }
 
-        function openEditProfileModal() {
+        function isLegacyDrive() {
+            return (window.__drivesyncConfig || {}).driveMode === 'script';
+        }
+
+        function setLegacyFieldsVisible(visible) {
+            document.querySelectorAll('#editProfileModal .ep-legacy').forEach(el => { el.style.display = visible ? '' : 'none'; });
+        }
+
+        function renderEditProfileDrive() {
+            const cfg = window.__drivesyncConfig || {};
+            const status = document.getElementById('epDriveStatus');
+            const btn = document.getElementById('epDriveBtn');
+            const row = document.getElementById('epDriveRow');
+            if (cfg.driveMode === 'script') { row.style.display = 'none'; return; }
+            row.style.display = '';
+            if (cfg.driveMode === 'google') {
+                status.textContent = cfg.driveEmail ? 'Connected as ' + cfg.driveEmail : 'Connected';
+                status.classList.add('ok');
+                btn.textContent = 'Disconnect';
+                btn.className = 'btn ep-drive-btn ep-drive-danger';
+                btn.onclick = disconnectGoogleDrive;
+            } else {
+                status.textContent = 'Not connected';
+                status.classList.remove('ok');
+                btn.textContent = 'Connect';
+                btn.className = 'btn btn-primary ep-drive-btn';
+                btn.onclick = connectGoogleDrive;
+            }
+        }
+
+        function openEditProfileModal(opts) {
             const acct = window.__drivesyncAccount || {};
+            const hasPassword = acct.hasPassword !== false;
             epAvatar = acct.avatar || '';
             epAvatarTouched = false;
 
@@ -660,6 +803,19 @@ export function initIndexPage() {
             document.getElementById('epNewPassword').value = '';
             document.getElementById('epConfirmPassword').value = '';
             document.getElementById('epCurrentPassword').value = '';
+
+            setLegacyFieldsVisible(isLegacyDrive());
+            renderEditProfileDrive();
+
+            // Accounts made with Google have no password yet: no "current password" box,
+            // and the new-password fields explain they are optional.
+            document.getElementById('epCurrentWrap').style.display = hasPassword ? '' : 'none';
+            document.getElementById('epNewPassword').placeholder = hasPassword ? 'Leave empty to keep current' : 'Set a password (optional)';
+
+            const banner = document.getElementById('epBanner');
+            const bannerText = opts && opts.banner ? opts.banner : '';
+            banner.textContent = bannerText;
+            banner.style.display = bannerText ? 'block' : 'none';
 
             const errEl = document.getElementById('editProfileError');
             errEl.style.display = 'none';
@@ -674,8 +830,49 @@ export function initIndexPage() {
             document.getElementById('editProfileModal').classList.remove('open');
         }
 
+        // Replaces the session token after a password change (keeps the user signed in).
+        function storeNewSessionToken(token) {
+            sessionStorage.setItem('drivesync_token', token);
+            if (localStorage.getItem('drivesync_token')) localStorage.setItem('drivesync_token', token);
+            clearBridgeToken();
+        }
+
+        async function disconnectGoogleDrive() {
+            const acct = window.__drivesyncAccount || {};
+            const errEl = document.getElementById('editProfileError');
+            const current = document.getElementById('epCurrentPassword').value;
+            errEl.style.display = 'none';
+
+            if (acct.hasPassword !== false && !current) {
+                errEl.innerText = 'Enter your current password below to disconnect Google Drive.';
+                errEl.style.display = 'block';
+                document.getElementById('epCurrentPassword').focus();
+                return;
+            }
+            if (!confirm('Disconnect Google Drive? Your files stay in your Drive, but DriveSync will stop showing them until you connect again.')) return;
+
+            try {
+                const response = await fetch('/api/me', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken() },
+                    body: JSON.stringify({ disconnectDrive: true, currentPassword: current })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) throw new Error(data.error || 'Could not disconnect Google Drive.');
+                setDriveSession(data.config);
+                closeEditProfileModal();
+                showConnectGate();
+                showToast('Google Drive disconnected.');
+            } catch (err) {
+                errEl.innerText = err.message;
+                errEl.style.display = 'block';
+            }
+        }
+
         async function submitEditProfile() {
             const acct = window.__drivesyncAccount || {};
+            const hasPassword = acct.hasPassword !== false;
+            const legacy = isLegacyDrive();
             const label = document.getElementById('epName').value.trim();
             const email = document.getElementById('epEmail').value.trim();
             const folderId = extractFolderId(document.getElementById('epFolder').value);
@@ -691,28 +888,33 @@ export function initIndexPage() {
 
             if (!label) return fail('Please enter your name.');
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Enter a valid email.');
-            if (!folderId) return fail('Paste your Google Drive folder link.');
-            if (!/^https:\/\/script\.google\.com\/macros\/s\/.+/i.test(macroUrl)) return fail('Enter a valid Apps Script URL.');
+            if (legacy) {
+                if (!folderId) return fail('Paste your Google Drive folder link.');
+                if (!/^https:\/\/script\.google\.com\/macros\/s\/.+/i.test(macroUrl)) return fail('Enter a valid Apps Script URL.');
+            }
 
             const emailChanged = email.toLowerCase() !== String(acct.email || '').toLowerCase();
-            const macroChanged = macroUrl !== MACRO_WEBAPP_URL;
+            const legacyChanged = legacy && (folderId !== ROOT_FOLDER_ID || macroUrl !== MACRO_WEBAPP_URL);
             const wantsPasswordChange = !!(newPassword || confirmPassword);
 
             if (wantsPasswordChange) {
                 if (!newPassword || !confirmPassword) return fail('Please fill in both new password fields.');
                 if (newPassword !== confirmPassword) return fail('New password and confirmation do not match.');
-                if (newPassword === currentPassword) return fail('New password must be different from the current one.');
+                if (hasPassword && newPassword === currentPassword) return fail('New password must be different from the current one.');
             }
-            const anyChange = label !== String(acct.label || '') || emailChanged || folderId !== ROOT_FOLDER_ID
-                || macroChanged || epAvatarTouched || wantsPasswordChange;
+
+            const anyChange = label !== String(acct.label || '') || emailChanged || legacyChanged
+                || epAvatarTouched || wantsPasswordChange;
             if (!anyChange) {
                 closeEditProfileModal();
                 showToast('No changes to save.');
                 return;
             }
-            if (!currentPassword) return fail('Enter your current password to save changes.');
+            if (hasPassword && !currentPassword) return fail('Enter your current password to save changes.');
 
-            const payload = { label, email, rootFolderId: folderId, macroUrl, currentPassword };
+            const payload = { label, email };
+            if (legacy) { payload.rootFolderId = folderId; payload.macroUrl = macroUrl; }
+            if (hasPassword) payload.currentPassword = currentPassword;
             if (epAvatarTouched) payload.avatar = epAvatar;
             if (wantsPasswordChange) payload.newPassword = newPassword;
 
@@ -722,10 +924,7 @@ export function initIndexPage() {
             try {
                 const response = await fetch('/api/me', {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + (sessionStorage.getItem('drivesync_token') || '')
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken() },
                     body: JSON.stringify(payload)
                 });
 
@@ -734,30 +933,19 @@ export function initIndexPage() {
                 if (!response.ok || !data.success) throw new Error(data.error || 'Failed to save profile.');
 
                 closeEditProfileModal();
-
-                if (data.passwordChanged) {
-                    // Password changed -> every old session token is invalid, so sign in again.
-                    executeAppLogout();
-                    return;
-                }
-
+                if (data.token) storeNewSessionToken(data.token);
                 applyProfile(data.account);
 
-                if (data.config && data.config.macroUrl && data.config.macroUrl !== MACRO_WEBAPP_URL) {
-                    MACRO_WEBAPP_URL = data.config.macroUrl;
-                    sessionStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
-                    if (localStorage.getItem('drivesync_macro')) localStorage.setItem('drivesync_macro', MACRO_WEBAPP_URL);
-                    reloadCurrentFolder();
-                }
-
-                if (data.config && data.config.rootFolderId && data.config.rootFolderId !== ROOT_FOLDER_ID) {
-                    ROOT_FOLDER_ID = data.config.rootFolderId;
-                    sessionStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
-                    if (localStorage.getItem('drivesync_root')) localStorage.setItem('drivesync_root', ROOT_FOLDER_ID);
+                if (legacy && data.config && (data.config.rootFolderId !== ROOT_FOLDER_ID || data.config.macroUrl !== MACRO_WEBAPP_URL)) {
+                    setDriveSession(data.config);
                     goToHomeView();
                     loadDriveContents(ROOT_FOLDER_ID);
+                } else {
+                    rememberConfig(data.config);
                 }
-                showToast(data.changed ? 'Profile updated.' : 'No changes to save.');
+
+                showToast(data.passwordChanged ? 'Password saved. You can now sign in with email and password too.'
+                    : (data.changed ? 'Profile updated.' : 'No changes to save.'));
             } catch (err) {
                 fail(err.message);
             } finally {
@@ -1016,6 +1204,8 @@ export function initIndexPage() {
                 const response = await fetch('/api/register');
                 const data = await response.json().catch(() => ({}));
                 line.style.display = data.enabled === false ? 'none' : 'block';
+                const googleBlock = document.getElementById('authGoogleBlock');
+                if (googleBlock) googleBlock.style.display = data.googleEnabled ? 'block' : 'none';
             } catch (err) {
                 line.style.display = 'block';
             }
@@ -1813,7 +2003,7 @@ export function initIndexPage() {
                     <div class="fname" ${rowClickAction}>
                         <div class="ficon" style="background:${badgeBg};color:${badgeTxt}">${iconHtml}</div>
                         <div>
-                            <div class="fname-text${cat === 'folder' ? ' folder-pill' : ''}" title="${esc(f.name)}">${esc(f.name)}</div>
+                            <div class="fname-text${cat === 'folder' ? ' folder-pill' : ''}">${esc(f.name)}</div>
                             ${pathSub}
                         </div>
                     </div>
@@ -1824,11 +2014,7 @@ export function initIndexPage() {
                             onclick="handleRenameItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')" title="Rename">
                             <i class="ti ti-edit"></i>
                         </button>
-                        ${cat === 'folder' ? '' : `<button class="btn-delete btn-download" style="color:#3b82f6;border-color:rgba(59,130,246,0.3);"
-                            onclick="downloadDriveFile('${f.id}')" title="Download">
-                            <i class="ti ti-download"></i>
-                        </button>`}
-                        <button class="btn-delete" title="Delete" onclick="handleDeleteItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')">
+                        <button class="btn-delete" onclick="handleDeleteItem('${f.id}','${cat === 'folder' ? 'folder' : 'file'}','${esc(f.name)}')">
                             <i class="ti ti-trash"></i>
                         </button>
                     </div>
@@ -2036,22 +2222,10 @@ export function initIndexPage() {
             }
         }
 
-        function downloadDriveFile(id) {
-            if (!id) return;
-            // Hidden iframe: Drive answers with "Content-Disposition: attachment", so the
-            // browser saves the file directly - no new tab, and this page stays put.
-            const frame = document.createElement('iframe');
-            frame.style.display = 'none';
-            frame.setAttribute('aria-hidden', 'true');
-            frame.src = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`;
-            document.body.appendChild(frame);
-            setTimeout(() => frame.remove(), 2 * 60 * 1000);
-        }
-
         function handleDeleteItem(id, type, name) {
             pendingDeleteTarget = { id, type };
             const modal = document.getElementById('deleteModal');
-            document.getElementById('deleteModalMessage').innerHTML = `Delete <strong>"${esc(name)}"</strong>?`;
+            document.getElementById('deleteModalMessage').innerHTML = `Are you absolutely sure you want to delete the ${type} <strong>"${esc(name)}"</strong>? This process cannot be undone.`;
             modal.classList.add('open');
             document.getElementById('confirmDeleteBtn').onclick = executeItemDeletion;
             pushNavState();
@@ -2618,7 +2792,9 @@ export function initIndexPage() {
         window.closeRegisterModal = closeRegisterModal;
         window.submitRegister = submitRegister;
         window.openChangePasswordModal = openChangePasswordModal;
-        window.downloadDriveFile = downloadDriveFile;
+        window.loginWithGoogle = loginWithGoogle;
+        window.connectGoogleDrive = connectGoogleDrive;
+        window.disconnectGoogleDrive = disconnectGoogleDrive;
         window.openEditProfileModal = openEditProfileModal;
         window.closeEditProfileModal = closeEditProfileModal;
         window.submitEditProfile = submitEditProfile;

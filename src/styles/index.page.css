@@ -2493,86 +2493,54 @@ html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !impo
     #sidebarAvatar.logo-icon { width: 44px; height: 44px; }
 }
 
-
-/* ---------- Compact spacing (tighter header / content gaps) ---------- */
-.content {
-    padding: 1rem 1.5rem 1.5rem;
+/* ---------- Google buttons, "or" divider, connect screen ---------- */
+.auth-google { display: block; }
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; color: var(--color-text-secondary); font-size: 12px; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--color-border-tertiary); }
+.google-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 11px 14px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, background 0.15s ease;
 }
+.google-btn:hover { background: #f8f9fa; box-shadow: 0 1px 3px rgba(60, 64, 67, 0.25); }
+.google-btn:disabled { opacity: 0.6; cursor: default; }
+.google-btn .g-logo { width: 18px; height: 18px; flex: none; }
+.google-btn-primary { padding: 12px 14px; }
+#connectDriveOverlay .auth-title p { line-height: 1.5; }
 
-.stats {
+/* ---------- Edit Profile: banner + Google Drive row ---------- */
+.ep-banner {
+    font-size: 13px;
+    line-height: 1.45;
+    padding: 10px 12px;
+    border-radius: var(--border-radius-md);
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-text-primary);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.ep-drive {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 12px;
-    margin-bottom: 1rem;
+    padding: 8px 8px 8px 12px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-secondary);
 }
-
-.stat {
-    padding: 0.9rem 1rem;
-}
-
-.stat-icon {
-    width: 36px;
-    height: 36px;
-    margin-bottom: 6px;
-}
-
-.stat-label {
-    margin-bottom: 2px;
-}
-
-.upload-zone {
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
-
-.upload-zone > i {
-    font-size: 26px !important;
-    margin-bottom: 4px !important;
-}
-
-@media (max-width: 640px) {
-    .content {
-        padding: 0.75rem;
-    }
-
-    .stats {
-        gap: 8px;
-        margin-bottom: 0.75rem;
-    }
-
-    .stat {
-        padding: 0.75rem;
-    }
-
-    .upload-zone {
-        padding: 0.9rem 0.75rem;
-        margin-bottom: 0.75rem;
-    }
-}
-
-/* Download button on file cards/rows */
-.btn-download:hover {
-    background: rgba(59, 130, 246, 0.14);
-}
-
-/* ---------- Grid FILE cards only (folders keep their natural compact height): uniform height, badge + View File pinned to the bottom ---------- */
-#fileTablePanel.view-grid .trow:not(.clickable-row):not(:has(.back-link-text)) {
-    box-sizing: border-box;
-    min-height: 218px;
-}
-
-#fileTablePanel.view-grid .trow:not(.clickable-row):not(:has(.back-link-text)) .fname-text {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-/* badge (2nd child) takes the free space above it, so badge + button sit at the bottom of every card */
-#fileTablePanel.view-grid .trow:not(.clickable-row):not(:has(.back-link-text)) > div:nth-child(2) {
-    margin-top: auto;
-}
-
-/* Remembered account photo on the sign-in card */
-.auth-icon.has-account-photo {
-    border-radius: 50%;
-}
+.ep-drive-status { font-size: 13px; color: var(--color-text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-drive-status.ok { color: #16a34a; font-weight: 600; }
+.ep-drive-btn { flex: none; padding: 7px 14px; font-size: 13px; }
+.ep-drive-danger { color: #ef4444; }

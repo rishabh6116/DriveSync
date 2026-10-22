@@ -3,10 +3,11 @@
 // POST { email, password }  → verifies credentials, returns a signed session
 //                             token plus the account's Drive config.
 //
-// Accounts come from STATIC_ACCOUNTS (api/config.js) and from the MongoDB
+// Accounts come from STATIC_ACCOUNTS (lib/config.js) and from the MongoDB
 // "accounts" collection (see lib/accounts.js).
 
 import { findAccountByEmail } from '../lib/accounts.js';
+import { accountForBrowser, driveConfigFor } from '../lib/driveConfig.js';
 import { burnPasswordCheck, normalizeEmail, verifyPassword } from '../lib/passwords.js';
 import { signSession } from '../lib/session.js';
 
@@ -57,6 +58,15 @@ export default async function handler(req, res) {
         const account = await findAccountByEmail(email);
 
         let ok = false;
+        if (account && !account.passwordHash) {
+            // Created with "Continue with Google" and no password set yet.
+            await burnPasswordCheck(password);
+            return res.status(401).json({
+                authenticated: false,
+                googleOnly: true,
+                error: 'This account uses Google sign-in. Tap "Continue with Google", then set a password from Edit Profile if you also want to use email and password.'
+            });
+        }
         if (account) {
             ok = await verifyPassword(password, account.passwordHash);
         } else {
@@ -73,11 +83,8 @@ export default async function handler(req, res) {
         return res.status(200).json({
             authenticated: true,
             token: signSession(account),
-            account: { email: account.email, label: account.label, avatar: account.avatar || '' },
-            config: {
-                macroUrl: account.macroUrl,
-                rootFolderId: account.rootFolderId
-            }
+            account: accountForBrowser(account),
+            config: driveConfigFor(account)
         });
     } catch (err) {
         console.error('auth.js crashed:', err);
