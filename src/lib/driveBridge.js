@@ -7,8 +7,8 @@
 // to BRIDGE_URL is answered by this file instead: it performs the same actions
 // directly against the Google Drive API using a short-lived access token that
 // the server hands out (/api/me?drive=token). The long-lived refresh token never
-// reaches the browser, and the `drive.file` scope only lets DriveSync see the
-// files and folders it created itself.
+// reaches the browser. The full `drive` scope lets DriveSync list files that
+// were added to the DriveSync folder by hand in Google Drive too.
 //
 // Because the replies have exactly the same JSON shape as the Apps Script ones,
 // none of the existing dashboard code (browse, upload, rename, delete, notes,
@@ -72,7 +72,7 @@ async function google(url, init = {}, retry = true) {
     if (!resp.ok) {
         let message = `Google Drive error (${resp.status})`;
         try { message = (await resp.clone().json()).error?.message || message; } catch { /* keep default */ }
-        if (resp.status === 404) message = 'That file or folder was not found in your DriveSync space.';
+        if (resp.status === 404) message = 'That file or folder was not found in your Google Drive.';
         throw new BridgeError(message, `HTTP_${resp.status}`);
     }
     return resp;
@@ -161,6 +161,12 @@ async function getStorageInfo() {
         storageUsed: (Number(q.usage || 0) / GB).toFixed(1),
         storageTotal: q.limit ? (Number(q.limit) / GB).toFixed(0) : '0'
     };
+}
+
+// Real id of the user's "My Drive" root (used by the Full Drive view).
+async function getRootId() {
+    const data = await googleJson(`${DRIVE}/files/root?fields=id`);
+    return { result: 'success', id: data.id };
 }
 
 async function downloadFile(p) {
@@ -294,6 +300,7 @@ async function handle(url, init) {
         if (p.action === 'fetchItems' || p.action === 'list') return fetchItems(p);
         if (p.action === 'getStorageInfo') return getStorageInfo();
         if (p.action === 'downloadFile') return downloadFile(p);
+        if (p.action === 'getRootId') return getRootId();
         return { result: 'success', message: 'DriveSync Drive bridge is active.' };
     }
 

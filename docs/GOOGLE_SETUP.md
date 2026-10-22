@@ -9,8 +9,8 @@ You do this setup **once** (you, the site owner). Users never see any of it.
 
 1. A user signs in (email/password or **Continue with Google**).
 2. If their Drive is not connected, the dashboard shows **Connect Google Drive**.
-3. Google asks them to allow DriveSync. The scope is `drive.file`, so DriveSync can
-   only see files and folders **it created itself**. The rest of their Drive is untouched.
+3. Google asks them to allow DriveSync. The scope is `drive`, so files a user adds to the
+   *DriveSync* folder directly from drive.google.com also show up in the dashboard.
 4. The server creates a folder called **DriveSync** in their Drive and stores the
    (encrypted) refresh token on their account.
 5. The browser asks `/api/me?drive=token` for a short-lived access token and talks to
@@ -32,7 +32,7 @@ with the same (verified) email, the two are linked automatically.
      use your own domain if you have one; for testing you can skip it).
    - Privacy policy link (required before publishing).
 4. **Data access / Scopes → Add:** `openid`, `.../auth/userinfo.email`,
-   `.../auth/userinfo.profile`, and `.../auth/drive.file`.
+   `.../auth/userinfo.profile`, and `.../auth/drive` (a *restricted* scope).
 5. **Clients → Create client → Web application**
    - **Authorized redirect URI:** `https://YOUR-DOMAIN/api/google`
      (for local testing also `http://localhost:3000/api/google`)
@@ -56,13 +56,12 @@ Redeploy after changing variables. Until both Google values are set, the
 | Publishing status | What happens |
 |---|---|
 | **Testing** | No review. Only users you add under *Test users* (max 100) can sign in, and Google expires their refresh token after **7 days** (they must reconnect weekly). Fine for you and friends. |
-| **In production** | `drive.file` is a non-sensitive scope, so only basic verification is needed (branding, domain, privacy policy). Tokens no longer expire after 7 days. |
+| **In production** | `drive` is a restricted scope, so Google requires full verification plus a security assessment before the 100-user cap is lifted. Tokens no longer expire after 7 days once approved. |
 
 ## 4. Good to know
 
-- **Only DriveSync's own files are visible.** With `drive.file`, files a user puts into the
-  *DriveSync* folder by hand in the Google Drive website do not show up in the dashboard;
-  upload through DriveSync (or create folders there).
+- **Existing users must reconnect once.** Accounts connected with the old `drive.file` scope get a *Connect Google Drive* prompt the next time they open the dashboard; after allowing it, files added by hand to the *DriveSync* folder appear.
+- Files added by hand are not "anyone with the link", so image/PDF preview inside the dashboard may be blank for them; *Open in Drive* still works.
 - Uploaded files are set to "anyone with the link can view", like the old Apps Script
   version, so image/PDF previews work. Some Google Workspace domains block this; the
   upload still succeeds.

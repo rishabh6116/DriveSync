@@ -43,6 +43,7 @@ function fakeNative(url, init = {}) {
         const parent = q.match(/'([^']+)' in parents/)[1];
         return json({ files: files.byParent[parent] || [] });
     }
+    if (method === 'GET' && u.includes('/files/root?fields=id')) return json({ id: 'MyDriveRoot1234567' });
     if (method === 'GET' && u.includes('fields=parents')) return json({ parents: [ROOT] });
     if (method === 'GET' && u.includes('fields=id,name,mimeType,size')) return json({ id: 'note1', name: 'My note.txt', mimeType: 'text/plain', size: '10', modifiedTime: '2026-03-01T00:00:00.000Z' });
     if (method === 'GET' && u.includes('fields=id,name,modifiedTime')) return json({ id: 'note1', name: 'My note.txt', modifiedTime: '2026-03-01T00:00:00.000Z' });
@@ -172,4 +173,9 @@ test('installDriveBridge answers bridge URLs and leaves other requests alone', a
     const res = await target.fetch(`${BRIDGE_URL}?action=fetchItems&folderId=${ROOT}`);
     assert.equal((await res.json()).result, 'success');
     assert.deepEqual(seen, ['/api/anything']);
+});
+
+test('getRootId returns the real My Drive root id (used by the Full Drive view)', async () => {
+    const r = await get({ action: 'getRootId' });
+    assert.deepEqual(r, { result: 'success', id: 'MyDriveRoot1234567' });
 });

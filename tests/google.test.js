@@ -53,7 +53,7 @@ const claims = (over = {}) => ({
 function okTokens(over = {}, scope) {
     return () => new Response(JSON.stringify({
         access_token: 'access-1', expires_in: 3600, refresh_token: 'refresh-secret-1',
-        scope: scope || 'openid email profile https://www.googleapis.com/auth/drive.file',
+        scope: scope || 'openid email profile https://www.googleapis.com/auth/drive',
         id_token: fakeIdToken(claims(over))
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
@@ -76,13 +76,13 @@ const fragment = (res) => new URLSearchParams(res.headers.location.replace(/^\/#
 before(mockGoogle);
 beforeEach(() => { docs.length = 0; mockGoogle(); refreshResponse = () => new Response(JSON.stringify({ access_token: 'access-2', expires_in: 3600 }), { status: 200 }); });
 
-test('login redirect asks for sign-in + the narrow drive.file scope', async () => {
+test('login redirect asks for sign-in + the full drive scope (so manually added files are visible)', async () => {
     const res = await call(google, { query: { action: 'login' } });
     const url = new URL(res.headers.location);
     assert.equal(url.origin + url.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
     assert.equal(url.searchParams.get('redirect_uri'), 'https://drivesync.test/api/google');
     const scope = url.searchParams.get('scope');
-    assert.ok(scope.includes('drive.file') && !scope.includes('auth/drive '));
+    assert.ok(scope.split(' ').includes('https://www.googleapis.com/auth/drive'));
     assert.equal(url.searchParams.get('access_type'), 'offline');
     assert.match(String(res.headers['set-cookie']), /HttpOnly/);
 });
@@ -252,7 +252,7 @@ test('Google user already linked can sign in again without a new refresh token',
     await googleLogin();
     const stored = docs[0].driveRefreshToken;
     const again = await googleLogin({ tokens: () => new Response(JSON.stringify({
-        access_token: 'a', expires_in: 3600, scope: 'openid email profile https://www.googleapis.com/auth/drive.file',
+        access_token: 'a', expires_in: 3600, scope: 'openid email profile https://www.googleapis.com/auth/drive',
         id_token: fakeIdToken(claims())
     }), { status: 200 }) });
     const f = fragment(again);
@@ -271,4 +271,15 @@ test('avatar download refuses non-Google hosts', async () => {
     assert.equal(await gl.fetchAvatarDataUrl('https://evil.example.com/a.jpg'), '');
     assert.equal(await gl.fetchAvatarDataUrl('http://lh3.googleusercontent.com/a'), '');
     assert.equal(await gl.fetchAvatarDataUrl('not a url'), '');
+});
+
+test('account still holding only the old drive.file scope is asked to reconnect', async () => {
+    const f = fragment(await googleLogin());
+    refreshResponse = () => new Response(JSON.stringify({
+        access_token: 'access-old', expires_in: 3600,
+        scope: 'openid email profile https://www.googleapis.com/auth/drive.file'
+    }), { status: 200 });
+    const res = await call(me, { query: { drive: 'token' }, headers: { authorization: `Bearer ${f.get('gauth')}` } });
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.needsConnect, true);
 });

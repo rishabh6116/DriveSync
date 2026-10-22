@@ -21,7 +21,7 @@
 
 import { DuplicateEmailError, emailUsedByStaticAccount, updateAccount } from '../lib/accounts.js';
 import { accountForBrowser, driveConfigFor, driveModeOf } from '../lib/driveConfig.js';
-import { decryptToken, refreshAccessToken, revokeToken } from '../lib/google.js';
+import { decryptToken, hasDriveScope, refreshAccessToken, revokeToken } from '../lib/google.js';
 import { hashPassword, normalizeEmail, validateEmail, validatePassword, verifyPassword } from '../lib/passwords.js';
 import { getSessionAccount, signSession } from '../lib/session.js';
 
@@ -43,6 +43,12 @@ async function driveToken(res, account) {
     }
     try {
         const tokens = await refreshAccessToken(decryptToken(account.driveRefreshToken));
+        // Accounts connected before the switch to the full `drive` scope only
+        // hold `drive.file` and cannot see files added by hand in Google Drive.
+        // Ask them to connect once more so Google grants the wider scope.
+        if (tokens.scope && !hasDriveScope(tokens.scope)) {
+            return res.status(409).json({ needsConnect: true, error: 'DriveSync needs updated Google Drive permission. Please tap Connect and allow it.' });
+        }
         return res.status(200).json({ accessToken: tokens.access_token, expiresIn: tokens.expires_in || 3600 });
     } catch (err) {
         if (err.code === 'invalid_grant') {

@@ -16,7 +16,7 @@ React · Vite · Vercel Serverless · MongoDB Atlas
 
 - **Email + password login** with scrypt-hashed passwords and signed session tokens
 - **Sign in with Google or email + password** – Google users can set a password later and use both
-- **Bring your own storage** – users connect their own Google Drive with one tap (OAuth, `drive.file` scope); no script or folder ID to set up. See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)
+- **Bring your own storage** – users connect their own Google Drive with one tap (OAuth, `drive` scope); no script or folder ID to set up. See [docs/GOOGLE_SETUP.md](docs/GOOGLE_SETUP.md)
 - **Self-service sign-up** with a one-click *Copy Script code* helper for the Drive setup
 - **Forgot password** by email – reset link valid for 10 minutes, single use
 - **Drive browser** – folders, upload, preview, search, grid / list view, light & dark theme

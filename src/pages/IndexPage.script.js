@@ -1,6 +1,6 @@
 import { markTabActive, isSameTabSession, clearTabMarker } from '../lib/tabSession.js';
 import { getMaskedValue, clearMaskedInput } from '../lib/maskedInput.js';
-import { installDriveBridge, clearBridgeToken, NEEDS_CONNECT_EVENT } from '../lib/driveBridge.js';
+import { installDriveBridge, clearBridgeToken, NEEDS_CONNECT_EVENT, BRIDGE_URL } from '../lib/driveBridge.js';
 import {
     ensureNotesFolder, listNotes, loadNoteContent, createNote, saveNoteContent, deleteNote,
 } from '../lib/notes.js';
@@ -27,6 +27,11 @@ export function initIndexPage() {
         let pendingRenameTarget = null;
         let notesFolderId = null;
         let currentMainMode = 'drive';
+        // "Full Drive" view: browses the whole My Drive instead of the DriveSync
+        // folder. While it is open ROOT_FOLDER_ID points at My Drive's real id.
+        let fullDriveMode = false;
+        let appRootId = '';       // the DriveSync folder id, kept while Full Drive is open
+        let myDriveRootId = '';   // real id of My Drive (resolved lazily)
 
         // --- Deep (recursive) search across subfolders ---
         // deepSearchResults stays null while not actively showing crawled
@@ -278,7 +283,7 @@ export function initIndexPage() {
                     // instead of always snapping back to the root directory.
                     let restoredFolderId = ROOT_FOLDER_ID;
                     const savedNavRaw = sessionStorage.getItem('drivesync_navstate');
-                    if (savedNavRaw) {
+                    if (savedNavRaw && !/"mode":"full"/.test(savedNavRaw)) {
                         try {
                             const savedNav = JSON.parse(savedNavRaw);
                             folderPathStack = (savedNav.path || []).map(f => ({ id: f.id, name: f.name }));
@@ -1092,6 +1097,7 @@ export function initIndexPage() {
         // link stays hidden until the server confirms it's on for this user.
         // =============================================
         async function checkAddAccountVisibility() {
+            updateFullDriveNav();
             const navBtn = document.getElementById('navAddAccountBtn');
             if (!navBtn) return;
 
@@ -1361,7 +1367,58 @@ export function initIndexPage() {
             if (notes) notes.style.display = 'none';
         }
 
+        function updateFullDriveNav() {
+            fullDriveMode = false;
+            myDriveRootId = '';
+            const btn = document.getElementById('cat-full');
+            // Only Google-connected accounts (Drive bridge) can browse the full Drive.
+            if (btn) btn.style.display = MACRO_WEBAPP_URL === BRIDGE_URL ? '' : 'none';
+        }
+
+        function leaveFullDrive() {
+            if (!fullDriveMode) return;
+            fullDriveMode = false;
+            ROOT_FOLDER_ID = appRootId;
+        }
+
+        async function resolveMyDriveRoot() {
+            if (myDriveRootId) return myDriveRootId;
+            const resp = await fetch(`${MACRO_WEBAPP_URL}?${new URLSearchParams({ action: 'getRootId' })}`);
+            const data = await resp.json();
+            if (data.result !== 'success' || !data.id) throw new Error(data.message || 'Could not open your Google Drive.');
+            myDriveRootId = data.id;
+            return myDriveRootId;
+        }
+
+        async function switchToFullDrive(element) {
+            closeSidebar();
+            let rootId;
+            try {
+                rootId = await resolveMyDriveRoot();
+            } catch (err) {
+                showToast(err.message || 'Could not open your Google Drive.');
+                return;
+            }
+            showDriveContent();
+            clearSearchState({ clearInput: true });
+            if (!fullDriveMode) appRootId = ROOT_FOLDER_ID;
+            fullDriveMode = true;
+            ROOT_FOLDER_ID = rootId;
+            currentMainMode = 'full';
+            activeFilterGroup = 'all';
+            document.querySelectorAll('.sidebar .nav-btn').forEach(b => b.classList.remove('active'));
+            if (element) element.classList.add('active');
+            document.querySelectorAll('.filter-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            const allTab = document.getElementById('tab-all');
+            if (allTab) allTab.classList.add('active');
+            const titleEl = document.getElementById('viewTitle');
+            titleEl.innerText = "Full Google Drive";
+            replayFade(titleEl);
+            navigateToRoot();
+        }
+
         function switchToNotesSection(element) {
+            leaveFullDrive();
             closeSidebar();
             clearSearchState({ clearInput: true });
             currentMainMode = 'notes';
@@ -1386,6 +1443,7 @@ export function initIndexPage() {
         }
 
         function switchCategoryView(mode, element) {
+            leaveFullDrive();
             closeSidebar();
             showDriveContent();
             clearSearchState({ clearInput: true });
@@ -1416,13 +1474,13 @@ export function initIndexPage() {
         function switchSidebarFilter(filterType, element) {
             closeSidebar();
             showDriveContent();
-            currentMainMode = 'drive';
-            const driveRootBtn = document.getElementById('cat-all');
+            currentMainMode = fullDriveMode ? 'full' : 'drive';
+            const driveRootBtn = document.getElementById(fullDriveMode ? 'cat-full' : 'cat-all');
             document.querySelectorAll('.sidebar .nav-btn').forEach(b => b.classList.remove('active'));
             driveRootBtn.classList.add('active');
             element.classList.add('active');
             const titleEl = document.getElementById('viewTitle');
-            titleEl.innerText = "DriveSync Storage";
+            titleEl.innerText = fullDriveMode ? "Full Google Drive" : "DriveSync Storage";
             replayFade(titleEl);
             const mainEl = document.querySelector('.main');
             if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1471,7 +1529,11 @@ export function initIndexPage() {
                 return;
             }
 
-            if (state.mode === 'recent') {
+            if (state.mode === 'full') {
+                const fullBtn = document.getElementById('cat-full');
+                if (fullBtn) fullBtn.classList.add('active');
+                if (titleEl) { titleEl.innerText = "Full Google Drive"; replayFade(titleEl); }
+            } else if (state.mode === 'recent') {
                 const recentBtn = document.getElementById('cat-recent');
                 if (recentBtn) recentBtn.classList.add('active');
                 if (titleEl) { titleEl.innerText = "Recent Activity Log"; replayFade(titleEl); }
@@ -1501,6 +1563,14 @@ export function initIndexPage() {
 
             const state = e.state;
             if (!state) return;
+
+            if (state.mode === 'full' && myDriveRootId) {
+                if (!fullDriveMode) appRootId = ROOT_FOLDER_ID;
+                fullDriveMode = true;
+                ROOT_FOLDER_ID = myDriveRootId;
+            } else {
+                leaveFullDrive();
+            }
 
             suppressHistoryPush = true;
             folderPathStack = (state.path || []).map(f => ({ id: f.id, name: f.name }));
@@ -1573,7 +1643,7 @@ export function initIndexPage() {
             // Piggyback on this listing to learn the Notes folder's ID for
             // free, instead of firing a second request to the (slow) Apps
             // Script backend just to check for it.
-            if (!notesFolderId && searchId === ROOT_FOLDER_ID) {
+            if (!notesFolderId && !fullDriveMode && searchId === ROOT_FOLDER_ID) {
                 const notesFolder = driveItems.find(i => i.type === 'folder' && i.name === 'Notes');
                 if (notesFolder) notesFolderId = notesFolder.id;
             }
@@ -1859,7 +1929,7 @@ export function initIndexPage() {
 
         function updateBreadcrumbs() {
             const bc = document.getElementById('breadcrumbs');
-            let html = `<span class="breadcrumb-item" onclick="navigateToRoot()">Drive Root</span>`;
+            let html = `<span class="breadcrumb-item" onclick="navigateToRoot()">${fullDriveMode ? 'My Drive' : 'Drive Root'}</span>`;
             folderPathStack.forEach((f) => {
                 html += ` <i class="ti ti-chevron-right" style="font-size:12px;"></i> <span class="breadcrumb-item" onclick="navigateToFolder('${f.id}', '${f.name}')">${esc(f.name)}</span>`;
             });
@@ -2863,6 +2933,7 @@ export function initIndexPage() {
         window.closeRenameModal = closeRenameModal;
         window.submitRenameItem = submitRenameItem;
         window.switchToNotesSection = switchToNotesSection;
+        window.switchToFullDrive = switchToFullDrive;
         window.openNoteEditor = openNoteEditor;
         window.backToNotesList = backToNotesList;
         window.saveCurrentNote = saveCurrentNote;
