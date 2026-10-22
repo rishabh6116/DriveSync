@@ -133,14 +133,14 @@
             text-decoration: underline;
         }
 
-        /* "Forgot password?" and "New here? Register" share one line. */
+        /* "New here? Register" (left) and "Forgot password?" (right) share one line, right under Sign In. */
         .auth-links-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
             gap: 6px 12px;
-            margin-top: 4px;
+            margin-top: -0.55rem; /* pull up close to the Sign In button (card gap is 1.25rem) */
             font-size: 13px;
         }
 
@@ -150,6 +150,7 @@
 
         .auth-register-link.auth-forgot-link {
             color: #ef4444;
+            text-decoration: underline;
             margin-left: auto; /* stays on the right even if Register is hidden */
         }
 
@@ -2494,8 +2495,8 @@ html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !impo
 }
 
 /* ---------- Google buttons, "or" divider, connect screen ---------- */
-.auth-google { display: block; }
-.auth-or { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; color: var(--color-text-secondary); font-size: 12px; }
+.auth-google { display: block; margin-top: -0.55rem; /* tighter gap above "or" / Google button */ }
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; color: var(--color-text-secondary); font-size: 12px; }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--color-border-tertiary); }
 .google-btn {
     width: 100%;
