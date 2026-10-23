@@ -5,7 +5,7 @@
 // password must always be confirmed.
 //
 // Only accounts stored in the database can be updated at
-// runtime. Accounts hardcoded in STATIC_ACCOUNTS (lib/config.js) are fixed in
+// runtime. Accounts hardcoded in STATIC_ACCOUNTS (api/config.js) are fixed in
 // source and return a friendly error instead.
 
 import { updateAccount } from '../lib/accounts.js';

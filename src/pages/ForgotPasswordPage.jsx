@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
 import pageCss from '../styles/register.page.css?raw';
+import { getLastAvatar } from '../lib/rememberedAccount.js';
 
 const MailIcon = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -45,7 +46,12 @@ export default function ForgotPasswordPage() {
         }
     }
 
-    const logo = <div className="rg-icon"><img src="/android-chrome-192x192.png?v=3" alt="DriveSync" /></div>;
+    const savedAvatar = getLastAvatar();
+    const logo = (
+        <div className={`rg-icon${savedAvatar ? ' rg-icon-photo' : ''}`}>
+            <img src={savedAvatar || '/android-chrome-192x192.png?v=3'} alt={savedAvatar ? 'Profile photo' : 'DriveSync'} />
+        </div>
+    );
 
     if (sent) {
         return (

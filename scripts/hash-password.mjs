@@ -1,5 +1,5 @@
 // Usage: node scripts/hash-password.mjs "my password"
-// Prints a hash you can paste into STATIC_ACCOUNTS (lib/config.js) as passwordHash.
+// Prints a hash you can paste into STATIC_ACCOUNTS (api/config.js) as passwordHash.
 import { hashPassword } from '../lib/passwords.js';
 
 const pw = process.argv[2];

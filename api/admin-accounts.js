@@ -39,8 +39,8 @@ export default async function handler(req, res) {
             const { label, email, password, macroUrl, rootFolderId } = req.body || {};
             const cleanEmail = normalizeEmail(email);
 
-            if (!label || !cleanEmail || !password || (Boolean(macroUrl) !== Boolean(rootFolderId))) {
-                return res.status(400).json({ error: 'label, email and password are required. macroUrl and rootFolderId go together (leave both empty: the user connects Google Drive after signing in).' });
+            if (!label || !cleanEmail || !password || !macroUrl || !rootFolderId) {
+                return res.status(400).json({ error: 'label, email, password, macroUrl, and rootFolderId are all required.' });
             }
 
             const problem = validateEmail(cleanEmail) || validatePassword(password);
@@ -55,7 +55,8 @@ export default async function handler(req, res) {
                 label,
                 email: cleanEmail,
                 passwordHash: await hashPassword(password),
-                ...(macroUrl && rootFolderId ? { macroUrl, rootFolderId } : {}),
+                macroUrl,
+                rootFolderId,
                 createdAt: new Date().toISOString()
             };
 
@@ -70,8 +71,8 @@ export default async function handler(req, res) {
             if (!id) {
                 return res.status(400).json({ error: 'id query param is required.' });
             }
-            if (!label || !cleanEmail || (Boolean(macroUrl) !== Boolean(rootFolderId))) {
-                return res.status(400).json({ error: 'label and email are required. macroUrl and rootFolderId go together (leave both empty for Google Drive accounts).' });
+            if (!label || !cleanEmail || !macroUrl || !rootFolderId) {
+                return res.status(400).json({ error: 'label, email, macroUrl, and rootFolderId are required.' });
             }
 
             const emailProblem = validateEmail(cleanEmail);
@@ -91,9 +92,8 @@ export default async function handler(req, res) {
                 label,
                 email: cleanEmail,
                 ...(password ? { passwordHash: await hashPassword(password) } : {}),
-                // Only touch the Apps Script settings when they were filled in, so editing
-                // a Google Drive account never wipes its connected folder.
-                ...(macroUrl && rootFolderId ? { macroUrl, rootFolderId } : {}),
+                macroUrl,
+                rootFolderId,
                 updatedAt: new Date().toISOString()
             });
 

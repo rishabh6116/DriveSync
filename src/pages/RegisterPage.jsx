@@ -1,13 +1,24 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import pageCss from '../styles/register.page.css?raw';
+import { buildDriveScript, looksLikeFolderId } from '../lib/driveScript.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MACRO_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/.+/i;
+
+// Accepts a bare folder ID or a full Drive folder URL and returns just the ID.
+function extractFolderId(value) {
+    const v = value.trim();
+    const m = v.match(/\/folders\/([A-Za-z0-9_-]+)/) || v.match(/[?&]id=([A-Za-z0-9_-]+)/);
+    return m ? m[1] : v;
+}
 
 function validate(v) {
     if (!v.label.trim()) return 'Enter your name.';
     if (!EMAIL_RE.test(v.email.trim()) || v.email.trim().length > 254) return 'Enter a valid email.';
     if (!v.password) return 'Enter a password.';
     if (v.password !== v.confirm) return 'Passwords do not match.';
+    if (!MACRO_URL_RE.test(v.macroUrl.trim())) return 'Enter a valid Apps Script URL.';
+    if (!v.rootFolderId.trim()) return 'Paste your Google Drive folder link.';
     return '';
 }
 
@@ -50,7 +61,6 @@ function fileToAvatar(file) {
 }
 
 const ICONS = {
-    google: <><path fill="#EA4335" stroke="none" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" transform="scale(.5)" /><path fill="#4285F4" stroke="none" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" transform="scale(.5)" /><path fill="#FBBC05" stroke="none" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" transform="scale(.5)" /><path fill="#34A853" stroke="none" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" transform="scale(.5)" /></>,
     camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></>,
     user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
     mail: <><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>,
@@ -74,15 +84,39 @@ function Icon({ name, className }) {
 }
 
 export default function RegisterPage() {
-    const [values, setValues] = useState({ label: '', email: '', password: '', confirm: '' });
+    const [values, setValues] = useState({ label: '', email: '', password: '', confirm: '', macroUrl: '', rootFolderId: '' });
     const [error, setError] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [enabled, setEnabled] = useState(null);
     const [done, setDone] = useState(false);
-    const [googleEnabled, setGoogleEnabled] = useState(false);
+    const [copied, setCopied] = useState(false);
     const [showPw, setShowPw] = useState(false);
     const [showPw2, setShowPw2] = useState(false);
     const [avatar, setAvatar] = useState('');
+
+    const folderId = values.rootFolderId.trim();
+    const script = useMemo(
+        () => (looksLikeFolderId(folderId) ? buildDriveScript(folderId) : ''),
+        [folderId]
+    );
+
+    async function copyScript() {
+        try {
+            await navigator.clipboard.writeText(script);
+        } catch {
+            // Fallback for browsers/contexts without the async clipboard API
+            const ta = document.createElement('textarea');
+            ta.value = script;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch { /* ignore */ }
+            ta.remove();
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    }
 
     useLayoutEffect(() => {
         const styleEl = document.createElement('style');
@@ -108,17 +142,13 @@ export default function RegisterPage() {
         let cancelled = false;
         fetch('/api/register')
             .then(r => r.json())
-            .then(d => {
-                if (cancelled) return;
-                setEnabled(Boolean(d.enabled));
-                setGoogleEnabled(Boolean(d.googleEnabled));
-            })
+            .then(d => { if (!cancelled) setEnabled(Boolean(d.enabled)); })
             .catch(() => { if (!cancelled) setEnabled(true); });
         return () => { cancelled = true; };
     }, []);
 
     const set = (name) => (e) => {
-        const val = e.target.value;
+        const val = name === 'rootFolderId' ? extractFolderId(e.target.value) : e.target.value;
         setValues(v => ({ ...v, [name]: val }));
         if (error) setError('');
     };
@@ -139,7 +169,8 @@ export default function RegisterPage() {
         ev.preventDefault();
         if (submitting) return;
 
-        const cleaned = { ...values };
+        const cleaned = { ...values, rootFolderId: extractFolderId(values.rootFolderId) };
+        setValues(cleaned);
         const msg = validate(cleaned);
         if (msg) { setError(msg); return; }
 
@@ -153,6 +184,8 @@ export default function RegisterPage() {
                     label: cleaned.label.trim(),
                     email: cleaned.email.trim(),
                     password: cleaned.password,
+                    macroUrl: cleaned.macroUrl.trim(),
+                    rootFolderId: cleaned.rootFolderId.trim(),
                     avatar
                 })
             });
@@ -180,7 +213,7 @@ export default function RegisterPage() {
                 <div className="rg-card rg-reg rg-reg-center">
                     <div className="rg-status ok"><Icon name="check" /></div>
                     <h2>Account created</h2>
-                    <p className="rg-reg-sub">Sign in next. You will connect your Google Drive in one tap.</p>
+                    <p className="rg-reg-sub">Your Drive is connected and your account is ready.</p>
                     <div className="rg-redirect"><span className="rg-spinner sm" />Redirecting to login…</div>
                 </div>
             </div>
@@ -198,6 +231,8 @@ export default function RegisterPage() {
         );
     }
 
+    const folderTyped = folderId.length > 0;
+
     const mismatch = values.confirm.length > 0 && values.password !== values.confirm;
 
     return (
@@ -206,7 +241,7 @@ export default function RegisterPage() {
                 <aside className="rg-side">
                     <div className="rg-title">
                         <h2>Create account</h2>
-                        <p>Sign up, then connect your Google Drive in one tap</p>
+                        <p>Connect your own Google Drive folder to DriveSync</p>
                     </div>
                     <div className="rg-avatar-pick">
                         <label className="rg-avatar-btn" title="Add profile photo">
@@ -252,6 +287,30 @@ export default function RegisterPage() {
                                 <Icon name={showPw2 ? 'eyeOff' : 'eye'} />
                             </button>
                         </div>
+
+                        <div className={'rg-folder-row rg-span' + (script ? ' has-copy' : '')}>
+                            <div className="rg-ifield">
+                                <input className="rg-input" type="text" placeholder="Drive link"
+                                    autoComplete="off" autoCapitalize="off" spellCheck={false}
+                                    value={values.rootFolderId} onChange={set('rootFolderId')} />
+                            </div>
+                            {script && (
+                                <button type="button" className={'rg-btn rg-copy-only' + (copied ? ' done' : '')} onClick={copyScript}>
+                                    <Icon name={copied ? 'check' : 'copy'} />
+                                    {copied ? 'Copied' : 'Copy Script code'}
+                                </button>
+                            )}
+                        </div>
+
+                        {folderTyped && !script && (
+                            <div className="rg-hint-line bad rg-span">That doesn't look like a Drive folder link or ID.</div>
+                        )}
+
+                        <div className="rg-ifield rg-span">
+                            <input className="rg-input" type="text" placeholder="Apps Script URL"
+                                autoComplete="off" autoCapitalize="off" spellCheck={false}
+                                value={values.macroUrl} onChange={set('macroUrl')} />
+                        </div>
                     </div>
 
                     {error && (
@@ -264,15 +323,6 @@ export default function RegisterPage() {
                     <button type="submit" className="rg-btn rg-submit" disabled={submitting || enabled === null}>
                         {submitting ? <><span className="rg-spinner sm" />Creating account…</> : 'Create account'}
                     </button>
-                    {googleEnabled && (
-                        <>
-                            <div className="rg-or"><span>or</span></div>
-                            <a className="rg-google" href="/api/google?action=login">
-                                <svg className="rg-google-logo" viewBox="0 0 24 24" aria-hidden="true">{ICONS.google}</svg>
-                                Continue with Google
-                            </a>
-                        </>
-                    )}
                     <div className="rg-foot">Already have an account? <a href="/">Sign in</a></div>
                 </div>
             </form>
